@@ -70,8 +70,10 @@
 	}
 
 	function closeImportModal() {
-		if (isBusy) return;
+		// Scanning is cancellable — abort it first
 		if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+		// Block close only during active imports (not scanning)
+		if (importMode === 'importing_single' || importMode === 'importing_batch') return;
 		showImportModal = false;
 	}
 

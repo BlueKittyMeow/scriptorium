@@ -13,16 +13,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Missing or invalid path');
 	}
 
+	// Expand tilde — Node.js doesn't do shell-style ~ expansion
+	const homeDir = os.homedir();
+	const expandedPath = inputPath.replace(/^~(?=$|\/)/, homeDir);
+
 	// Resolve symlinks and normalize the path
 	let resolvedPath: string;
 	try {
-		resolvedPath = realpathSync(inputPath);
+		resolvedPath = realpathSync(expandedPath);
 	} catch {
-		throw error(400, `Path does not exist: ${inputPath}`);
+		throw error(400, `Path does not exist: ${expandedPath}`);
 	}
 
 	// Safe root boundary: must be under user's home directory
-	const homeDir = os.homedir();
 	if (!resolvedPath.startsWith(homeDir)) {
 		throw error(400, 'Scan path must be within your home directory');
 	}

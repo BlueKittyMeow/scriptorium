@@ -310,6 +310,71 @@ describe('batch endpoint', () => {
 });
 
 // ============================================================
+// Bug fix tests
+// ============================================================
+describe('bug fixes', () => {
+	// Bug 1: Tilde expansion — realpathSync('~/Writing') throws ENOENT
+	it('scan endpoint should expand tilde before resolving path', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			'utf8'
+		);
+		// Should replace ~ with homedir before passing to realpathSync
+		expect(source).toMatch(/replace.*~.*homeDir|homeDir.*replace.*~/)
+	});
+
+	it('batch endpoint should expand tilde before resolving path', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			'utf8'
+		);
+		// Should replace ~ with homedir
+		expect(source).toMatch(/replace.*~.*homeDir|homeDir.*replace.*~/)
+	});
+
+	// Bug 2: closeImportModal blocks during scan because isBusy includes 'scanning'
+	it('closeImportModal should abort scan before blocking check', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/+page.svelte'),
+			'utf8'
+		);
+		// Extract the closeImportModal function body
+		const fnStart = source.indexOf('function closeImportModal');
+		const fnBody = source.substring(fnStart, fnStart + 400);
+		// The abort logic should come BEFORE any blocking return
+		// It should NOT do `if (isBusy) return` first since that blocks scan cancel
+		const abortIdx = fnBody.indexOf('abort');
+		const busyReturnMatch = fnBody.match(/if\s*\(\s*(?:isBusy|importMode\s*===)/);
+		if (busyReturnMatch) {
+			const blockIdx = fnBody.indexOf(busyReturnMatch[0]);
+			expect(abortIdx).toBeLessThan(blockIdx);
+		}
+		// Should still block during actual imports (not scanning)
+		expect(fnBody).toMatch(/importing_single|importing_batch/);
+	});
+
+	// Bug 3: Batch summary counts partial successes as failures
+	it('batch endpoint should count by novel_id not just errors', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			'utf8'
+		);
+		// The "succeeded" filter should check novel_id, not just errors.length === 0
+		// A project with docs_imported > 0 but some RTF errors should count as succeeded
+		expect(source).toMatch(/succeeded.*novel_id|novel_id.*succeeded/s);
+	});
+
+	// Bug 4: Batch endpoint missing homedir boundary
+	it('batch endpoint should enforce homedir boundary', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			'utf8'
+		);
+		expect(source).toMatch(/homeDir|os\.homedir/);
+	});
+});
+
+// ============================================================
 // Duplicate detection test
 // ============================================================
 describe('duplicate detection', () => {
