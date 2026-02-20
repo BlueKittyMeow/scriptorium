@@ -1,6 +1,6 @@
 # Scriptorium
 ### A preservation-first writing application
-### Design Document v0.4
+### Design Document v0.5
 
 ---
 
@@ -551,38 +551,61 @@ MyNovel.scriv/
 
 ## Phase Plan
 
-### MVP: The Local Scriptorium 📜
+### MVP: The Local Scriptorium 📜 ✅
 *Goal: Ingest .scriv files, browse and edit locally, search everything*
 
 No auth, no sync, no offline cache — single-process SvelteKit on `localhost:5173`.
 
 **Core:**
-- [ ] Project scaffolding (SvelteKit with `+server.js` API endpoints, adapter-node)
-- [ ] SQLite schema for novels, folders, documents, snapshots (DB via `hooks.server.js` + `event.locals`)
-- [ ] FTS5 search index (content mirrored from files into SQLite for search)
-- [ ] File-based content storage with atomic writes (tmp → rename → SQLite transaction)
-- [ ] `DATA_ROOT` env variable for configurable data directory
-- [ ] .scriv import (parse .scrivx via fast-xml-parser, RTF → HTML via @iarna/rtf-to-html, rebuild tree)
-- [ ] Import validation report (docs imported, folders created, skipped files, errors)
-- [ ] TipTap editor with basic rich text (verify svelte-tiptap maturity; fallback: thin custom wrapper)
-- [ ] Sidebar binder tree with drag-and-drop
-- [ ] Auto-save with snapshot creation
-- [ ] New novel / new document / new folder
-- [ ] Soft-delete to trash
-- [ ] Basic full-text search
-- [ ] Basic responsive layout (works on phone)
+- [x] Project scaffolding (SvelteKit with `+server.js` API endpoints, adapter-node)
+- [x] SQLite schema for novels, folders, documents, snapshots (DB via `hooks.server.js` + `event.locals`)
+- [x] FTS5 search index (content mirrored from files into SQLite for search)
+- [x] File-based content storage with atomic writes (tmp → rename → SQLite transaction)
+- [x] `DATA_ROOT` env variable for configurable data directory
+- [x] .scriv import (parse .scrivx via fast-xml-parser, RTF → HTML via @iarna/rtf-to-html, rebuild tree)
+- [x] Import validation report (docs imported, folders created, skipped files, errors)
+- [x] TipTap editor with basic rich text (thin custom wrapper — svelte-tiptap skipped, TipTap core used directly)
+- [x] Sidebar binder tree with drag-and-drop
+- [x] Auto-save with snapshot creation
+- [x] New novel / new document / new folder
+- [x] Soft-delete to trash
+- [x] Basic full-text search
+- [x] Basic responsive layout (works on phone)
 
-**Stretch:**
-- [ ] Basic compile/export — concatenate manuscript documents in binder order, export via Pandoc as docx (enough to hand someone a readable manuscript)
+### Phase 1a: Snapshot Browser ✅
+*Pulled forward from Phase 1 — "Show me Tuesday's version"*
 
-### Phase 1: The Writing Room 🖋️
+- [x] Snapshot timeline panel with day grouping, word count deltas, reason labels
+- [x] Read-only snapshot preview (TipTap in non-editable mode)
+- [x] Non-destructive restore (pre-restore snapshot created automatically)
+- [x] Manual snapshot creation from editor footer
+- [x] Pagination (limit/offset) for snapshot lists
+- [x] Bug fixes: snapshot filenames use UUID not timestamp, secondary sort key, transaction wrapping, deleted_at checks, SnapshotSummary type without content_path
+
+### Phase 1b: Compile/Export 🔧
+*Pulled forward from Phase 5 — no dependency on auth or sync*
+
+- [ ] Pandoc integration (docx, epub, PDF, markdown output)
+  - Compile = concatenate manuscript documents in binder order
+  - **Per-document include/exclude toggle** — uncheck chapters that aren't ready (compile_include already in DB schema)
+  - Compile preview before export (HTML)
+  - Save compile configurations (e.g., "Full manuscript", "First three chapters", "Contest submission")
+  - Front/back matter templates (title page, copyright, dedication)
+
+### Interstitial: Theming ✅
+*Pulled forward from Phase 5*
+
+- [x] CSS custom properties system (~27 variables)
+- [x] Dark theme (warm aged-leather aesthetic)
+- [x] System → Light → Dark cycle with localStorage persistence
+- [x] Flash prevention (inline script in app.html)
+- [x] Spellcheck toggle with persistence
+
+### Phase 1 (remaining): The Writing Room 🖋️
 *Goal: Full local writing experience beyond MVP*
 
-- [ ] Everything from MVP, plus:
-- [ ] Snapshot browser with timeline ("Show me Tuesday's version")
 - [ ] Import Scrivener snapshots (if present in .scriv)
 - [ ] Richer .scriv import (iterate on RTF edge cases: footnotes, annotations, embedded images)
-- [ ] Full compile/export with per-document include/exclude toggle and saved configurations
 
 ### Phase 2: The Lock and Key 🔐
 *Goal: Two users, protected access*
@@ -621,16 +644,10 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 ### Phase 5: The Bindery ✨
 *Goal: Polish and output*
 
-- [ ] Compile/export via Pandoc (docx, epub, PDF, markdown)
-  - Compile = concatenate manuscript documents in binder order
-  - **Per-document include/exclude toggle** — uncheck chapters that aren't ready
-  - Compile preview before export
-  - Save compile configurations (e.g., "Full manuscript", "First three chapters", "Contest submission")
-  - Front/back matter templates (title page, copyright, dedication)
 - [ ] Corkboard/index card view
 - [ ] Word count targets and progress tracking
 - [ ] Focus/distraction-free writing mode
-- [ ] Themes (including, obviously, dark Victorian)
+- [ ] Extended themes (Victorian aesthetic, custom palettes)
 - [ ] Docker packaging for easy deployment
 
 ---
@@ -713,8 +730,15 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
   - **Import validation report** added to MVP checklist. (Codex)
   - **DATA_ROOT env variable** added for configurable data directory. (Gemini)
 
+- **v0.5** — Progress update and phase shuffle. Changes:
+  - **MVP marked complete** — all 14 core items implemented and shipped
+  - **Phase 1a (Snapshot Browser) marked complete** — timeline panel, preview, non-destructive restore, manual snapshots, pagination, bug fixes. Reviewed by Codex + Gemini + Claude.
+  - **Theming marked complete** — CSS custom properties, dark mode, system/light/dark cycle, flash prevention, spellcheck persistence. Reviewed by Codex + Gemini + Claude.
+  - **Compile/export pulled forward to Phase 1b** — no dependency on auth or sync; Pandoc integration is next
+  - **Phase 5 slimmed** — compile/export and theming moved to earlier phases; remaining: corkboard, word count targets, focus mode, extended themes, Docker
+
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.4
+— Scriptorium design document, v0.5
