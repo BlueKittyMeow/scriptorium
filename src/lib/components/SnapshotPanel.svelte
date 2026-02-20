@@ -70,8 +70,8 @@
 
 <div class="snapshot-panel">
 	<div class="panel-header">
-		<h3>Snapshots</h3>
 		<button class="panel-close" onclick={onClose} title="Close" aria-label="Close snapshots">×</button>
+		<h3>Snapshots</h3>
 	</div>
 
 	<div class="panel-content">
@@ -120,10 +120,11 @@
 
 	.panel-header {
 		padding: 0.75rem 1rem;
+		padding-right: 2.5rem; /* clear the fixed theme toggle */
 		border-bottom: 1px solid var(--border-strong);
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.panel-header h3 {
