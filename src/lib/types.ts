@@ -72,8 +72,32 @@ export interface ImportReport {
 	docs_imported: number;
 	folders_created: number;
 	files_skipped: number;
+	total_word_count: number;
 	errors: string[];
 	warnings: string[];
+}
+
+export interface ScrivProject {
+	path: string;
+	name: string;
+	existingNovelTitle: string | null;
+}
+
+export interface ScanResult {
+	directory: string;
+	projects: ScrivProject[];
+}
+
+export interface BatchImportResult {
+	results: (ImportReport & { path: string })[];
+	summary: {
+		total: number;
+		succeeded: number;
+		failed: number;
+		total_docs: number;
+		total_folders: number;
+		total_words: number;
+	};
 }
 
 export type CompileFormat = 'docx' | 'epub' | 'pdf' | 'markdown';

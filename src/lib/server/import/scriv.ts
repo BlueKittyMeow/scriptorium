@@ -51,6 +51,7 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 		docs_imported: 0,
 		folders_created: 0,
 		files_skipped: 0,
+		total_word_count: 0,
 		errors: [],
 		warnings: []
 	};
@@ -142,6 +143,10 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 		report.errors.push(`Import aborted: ${err.message}`);
 		return report;
 	}
+
+	// Compute total word count from all imported documents
+	const wordCountRow = db.prepare('SELECT COALESCE(SUM(word_count), 0) as total FROM documents WHERE novel_id = ?').get(novelId) as any;
+	report.total_word_count = wordCountRow.total;
 
 	return report;
 }

@@ -1,15 +1,35 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import type { ScrivProject } from '$lib/types.js';
 
 	let novels: any[] = $state([]);
-	let showImportModal = $state(false);
 	let showNewNovelModal = $state(false);
-	let importPath = $state('');
 	let newNovelTitle = $state('');
-	let importing = $state(false);
-	let importReport: any = $state(null);
 	let loading = $state(true);
+
+	// Import modal state machine
+	type ImportMode = 'idle' | 'scanning' | 'project_list' | 'importing_single' | 'importing_batch' | 'report_single' | 'report_batch';
+	let showImportModal = $state(false);
+	let importMode: ImportMode = $state('idle');
+	let importPath = $state('');
+	let importError: string | null = $state(null);
+
+	// Single import
+	let singleReport: any = $state(null);
+
+	// Batch scan/import
+	let scannedProjects: ScrivProject[] = $state([]);
+	let selectedPaths: Set<string> = $state(new Set());
+	let batchResults: any = $state(null);
+	let batchProgress = $state({ current: 0, total: 0, currentName: '' });
+	let scanAbort: AbortController | null = $state(null);
+
+	let isSingleScrivPath = $derived(importPath.trim().endsWith('.scriv'));
+	let selectedCount = $derived(selectedPaths.size);
+	let isBusy = $derived(
+		importMode === 'scanning' || importMode === 'importing_single' || importMode === 'importing_batch'
+	);
 
 	onMount(async () => {
 		await loadNovels();
@@ -35,10 +55,31 @@
 		goto(`/novels/${novel.id}`);
 	}
 
-	async function importScriv() {
+	function openImportModal() {
+		// Reset all state on open (review fix #7)
+		importMode = 'idle';
+		importPath = '';
+		importError = null;
+		singleReport = null;
+		scannedProjects = [];
+		selectedPaths = new Set();
+		batchResults = null;
+		batchProgress = { current: 0, total: 0, currentName: '' };
+		if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+		showImportModal = true;
+	}
+
+	function closeImportModal() {
+		if (isBusy) return;
+		if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+		showImportModal = false;
+	}
+
+	async function importSingle() {
 		if (!importPath.trim()) return;
-		importing = true;
-		importReport = null;
+		importMode = 'importing_single';
+		importError = null;
+		singleReport = null;
 		try {
 			const res = await fetch('/api/admin/import', {
 				method: 'POST',
@@ -47,15 +88,108 @@
 			});
 			if (!res.ok) {
 				const err = await res.json();
-				importReport = { error: err.message || 'Import failed' };
+				importError = err.message || 'Import failed';
+				importMode = 'idle';
 				return;
 			}
-			importReport = await res.json();
+			singleReport = await res.json();
+			importMode = 'report_single';
 			await loadNovels();
 		} catch (err: any) {
-			importReport = { error: err.message };
+			importError = err.message;
+			importMode = 'idle';
+		}
+	}
+
+	async function scanDirectory() {
+		if (!importPath.trim()) return;
+		importMode = 'scanning';
+		importError = null;
+
+		const abort = new AbortController();
+		scanAbort = abort;
+
+		try {
+			const res = await fetch('/api/admin/import/scan', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ path: importPath.trim() }),
+				signal: abort.signal
+			});
+
+			// Guard against stale response if modal was closed
+			if (abort.signal.aborted) return;
+
+			if (!res.ok) {
+				const err = await res.json();
+				importError = err.message || 'Scan failed';
+				importMode = 'idle';
+				return;
+			}
+
+			const data = await res.json();
+			scannedProjects = data.projects;
+			selectedPaths = new Set(data.projects.map((p: ScrivProject) => p.path));
+			importMode = 'project_list';
+		} catch (err: any) {
+			if (err.name === 'AbortError') return;
+			importError = err.message;
+			importMode = 'idle';
 		} finally {
-			importing = false;
+			scanAbort = null;
+		}
+	}
+
+	function toggleProject(projectPath: string) {
+		const next = new Set(selectedPaths);
+		if (next.has(projectPath)) {
+			next.delete(projectPath);
+		} else {
+			next.add(projectPath);
+		}
+		selectedPaths = next;
+	}
+
+	function toggleAll() {
+		if (selectedPaths.size === scannedProjects.length) {
+			selectedPaths = new Set();
+		} else {
+			selectedPaths = new Set(scannedProjects.map(p => p.path));
+		}
+	}
+
+	async function importBatch() {
+		if (selectedPaths.size === 0) return;
+		const paths = Array.from(selectedPaths);
+		importMode = 'importing_batch';
+		batchProgress = { current: 0, total: paths.length, currentName: '' };
+
+		try {
+			const res = await fetch('/api/admin/import/batch', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ paths })
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				importError = err.message || 'Batch import failed';
+				importMode = 'project_list';
+				return;
+			}
+			batchResults = await res.json();
+			importMode = 'report_batch';
+			await loadNovels();
+		} catch (err: any) {
+			importError = err.message;
+			importMode = 'project_list';
+		}
+	}
+
+	function handleImportAction() {
+		if (isSingleScrivPath) {
+			importSingle();
+		} else if (importPath.trim()) {
+			scanDirectory();
 		}
 	}
 
@@ -88,7 +222,7 @@
 
 	<div class="actions">
 		<button class="btn btn-primary" onclick={() => showNewNovelModal = true}>New Novel</button>
-		<button class="btn btn-secondary" onclick={() => showImportModal = true}>Import .scriv</button>
+		<button class="btn btn-secondary" onclick={openImportModal}>Import .scriv</button>
 	</div>
 
 	{#if loading}
@@ -133,53 +267,167 @@
 
 <!-- Import Modal -->
 {#if showImportModal}
-	<div class="modal-backdrop" onclick={() => { if (!importing) showImportModal = false; }} role="presentation">
-		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && !importing && (showImportModal = false)} role="dialog" aria-modal="true" tabindex="-1">
+	<div class="modal-backdrop" onclick={closeImportModal} role="presentation">
+		<div class="modal import-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && closeImportModal()} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>Import Scrivener Project</h2>
-			<p>Enter the full path to your .scriv directory:</p>
-			<input
-				type="text"
-				bind:value={importPath}
-				placeholder="/path/to/MyNovel.scriv"
-				disabled={importing}
-			/>
-			<div class="modal-actions">
-				<button class="btn btn-secondary" onclick={() => showImportModal = false} disabled={importing}>Cancel</button>
-				<button class="btn btn-primary" onclick={importScriv} disabled={importing || !importPath.trim()}>
-					{importing ? 'Importing...' : 'Import'}
-				</button>
-			</div>
 
-			{#if importReport}
-				<div class="import-report" class:error={importReport.error}>
-					{#if importReport.error}
-						<p class="report-error">{importReport.error}</p>
+			{#if importError}
+				<div class="import-report error">
+					<p class="report-error">{importError}</p>
+				</div>
+			{/if}
+
+			<!-- IDLE: Path entry -->
+			{#if importMode === 'idle'}
+				<p>Enter a path to a .scriv file, or a directory to scan for projects:</p>
+				<input
+					type="text"
+					bind:value={importPath}
+					placeholder="/path/to/MyNovel.scriv or ~/Writing"
+					onkeydown={(e) => e.key === 'Enter' && handleImportAction()}
+				/>
+				<div class="modal-actions">
+					<button class="btn btn-secondary" onclick={closeImportModal}>Cancel</button>
+					{#if isSingleScrivPath}
+						<button class="btn btn-primary" onclick={importSingle} disabled={!importPath.trim()}>
+							Import
+						</button>
 					{:else}
-						<p><strong>{importReport.novel_title}</strong> imported successfully!</p>
-						<ul>
-							<li>{importReport.docs_imported} documents imported</li>
-							<li>{importReport.folders_created} folders created</li>
-							{#if importReport.files_skipped > 0}
-								<li>{importReport.files_skipped} files skipped</li>
-							{/if}
-							{#if importReport.errors.length > 0}
-								<li class="report-error">{importReport.errors.length} errors</li>
-							{/if}
-						</ul>
-						{#if importReport.warnings.length > 0}
-							<details>
-								<summary>{importReport.warnings.length} warnings</summary>
-								<ul>
-									{#each importReport.warnings as warning}
-										<li>{warning}</li>
-									{/each}
-								</ul>
-							</details>
-						{/if}
-						<button class="btn btn-primary" onclick={() => goto(`/novels/${importReport.novel_id}`)}>
-							Open Novel
+						<button class="btn btn-primary" onclick={scanDirectory} disabled={!importPath.trim()}>
+							Scan for Projects
 						</button>
 					{/if}
+				</div>
+
+			<!-- SCANNING: Loading -->
+			{:else if importMode === 'scanning'}
+				<p>Scanning for .scriv projects...</p>
+				<div class="modal-actions">
+					<button class="btn btn-secondary" onclick={closeImportModal}>Cancel</button>
+				</div>
+
+			<!-- PROJECT_LIST: Selectable checklist -->
+			{:else if importMode === 'project_list'}
+				<div class="project-list-header">
+					<p>Found {scannedProjects.length} project{scannedProjects.length !== 1 ? 's' : ''}:</p>
+					<button class="btn-link" onclick={toggleAll}>
+						{selectedPaths.size === scannedProjects.length ? 'Deselect All' : 'Select All'}
+					</button>
+				</div>
+				<div class="project-list">
+					{#each scannedProjects as project}
+						<label class="project-item">
+							<input
+								type="checkbox"
+								checked={selectedPaths.has(project.path)}
+								onchange={() => toggleProject(project.path)}
+							/>
+							<div class="project-info">
+								<span class="project-name">{project.name}</span>
+								<span class="project-path">{project.path.replace(importPath.trim(), '.')}</span>
+								{#if project.existingNovelTitle}
+									<span class="duplicate-badge">Already imported?</span>
+								{/if}
+							</div>
+						</label>
+					{/each}
+				</div>
+				<div class="modal-actions">
+					<button class="btn btn-secondary" onclick={() => { importMode = 'idle'; importError = null; }}>Back</button>
+					<button class="btn btn-primary" onclick={importBatch} disabled={selectedCount === 0}>
+						Import {selectedCount} project{selectedCount !== 1 ? 's' : ''}
+					</button>
+				</div>
+
+			<!-- IMPORTING_SINGLE: Single import in progress -->
+			{:else if importMode === 'importing_single'}
+				<p>Importing...</p>
+
+			<!-- IMPORTING_BATCH: Batch progress -->
+			{:else if importMode === 'importing_batch'}
+				<p>Importing {batchProgress.total} projects...</p>
+
+			<!-- REPORT_SINGLE: Single import results -->
+			{:else if importMode === 'report_single' && singleReport}
+				<div class="import-report">
+					<p><strong>{singleReport.novel_title}</strong> imported successfully!</p>
+					<ul>
+						<li>{singleReport.docs_imported} documents imported</li>
+						<li>{singleReport.folders_created} folders created</li>
+						{#if singleReport.total_word_count > 0}
+							<li>{formatWordCount(singleReport.total_word_count)}</li>
+						{/if}
+						{#if singleReport.files_skipped > 0}
+							<li>{singleReport.files_skipped} files skipped</li>
+						{/if}
+						{#if singleReport.errors?.length > 0}
+							<li class="report-error">{singleReport.errors.length} errors</li>
+						{/if}
+					</ul>
+					{#if singleReport.warnings?.length > 0}
+						<details>
+							<summary>{singleReport.warnings.length} warnings</summary>
+							<ul>
+								{#each singleReport.warnings as warning}
+									<li>{warning}</li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
+					<button class="btn btn-primary" onclick={() => goto(`/novels/${singleReport.novel_id}`)}>
+						Open Novel
+					</button>
+				</div>
+				<div class="modal-actions">
+					<button class="btn btn-secondary" onclick={closeImportModal}>Done</button>
+				</div>
+
+			<!-- REPORT_BATCH: Batch import results -->
+			{:else if importMode === 'report_batch' && batchResults}
+				<div class="import-report">
+					<p>
+						<strong>{batchResults.summary.succeeded}</strong> of {batchResults.summary.total} projects imported
+						({batchResults.summary.total_docs} documents, {batchResults.summary.total_folders} folders{batchResults.summary.total_words > 0 ? `, ${formatWordCount(batchResults.summary.total_words)}` : ''})
+					</p>
+					{#if batchResults.summary.failed > 0}
+						<p class="report-error">{batchResults.summary.failed} failed</p>
+					{/if}
+				</div>
+				<div class="batch-results">
+					{#each batchResults.results as result}
+						<div class="batch-result-item" class:failed={result.errors.length > 0}>
+							<div class="batch-result-header">
+								<span class="project-name">{result.novel_title || result.path.split('/').pop()}</span>
+								{#if result.errors.length > 0}
+									<span class="badge-error">Failed</span>
+								{:else}
+									<span class="badge-success">{result.docs_imported} docs</span>
+								{/if}
+							</div>
+							{#if result.errors.length > 0}
+								<p class="report-error batch-error-detail">{result.errors.join(', ')}</p>
+							{:else}
+								<div class="batch-result-actions">
+									<button class="btn btn-primary btn-sm" onclick={() => goto(`/novels/${result.novel_id}`)}>
+										Open
+									</button>
+								</div>
+							{/if}
+							{#if result.warnings?.length > 0}
+								<details>
+									<summary class="batch-warnings-summary">{result.warnings.length} warnings</summary>
+									<ul>
+										{#each result.warnings as warning}
+											<li>{warning}</li>
+										{/each}
+									</ul>
+								</details>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				<div class="modal-actions">
+					<button class="btn btn-secondary" onclick={closeImportModal}>Done</button>
 				</div>
 			{/if}
 		</div>
@@ -391,6 +639,10 @@
 		box-shadow: 0 8px 32px var(--shadow-lg);
 	}
 
+	.import-modal {
+		max-width: 600px;
+	}
+
 	.modal h2 {
 		margin-bottom: 0.75rem;
 		color: var(--text-heading);
@@ -450,6 +702,153 @@
 
 	.import-report .btn {
 		margin-top: 0.75rem;
+	}
+
+	/* Batch import styles */
+	.project-list-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.5rem;
+	}
+
+	.project-list-header p {
+		margin-bottom: 0;
+	}
+
+	.btn-link {
+		background: none;
+		border: none;
+		color: var(--accent);
+		cursor: pointer;
+		font-size: 0.85rem;
+		padding: 0;
+	}
+
+	.btn-link:hover {
+		text-decoration: underline;
+	}
+
+	.project-list {
+		max-height: 300px;
+		overflow-y: auto;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		margin-bottom: 1rem;
+	}
+
+	.project-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		cursor: pointer;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.project-item:last-child {
+		border-bottom: none;
+	}
+
+	.project-item:hover {
+		background: var(--bg-elevated);
+	}
+
+	.project-item input[type="checkbox"] {
+		margin-top: 0.2rem;
+		width: auto;
+	}
+
+	.project-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.project-name {
+		font-weight: 500;
+		color: var(--text);
+	}
+
+	.project-path {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.duplicate-badge {
+		font-size: 0.7rem;
+		color: var(--warning-text);
+		background: var(--warning-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+		width: fit-content;
+	}
+
+	.batch-results {
+		max-height: 300px;
+		overflow-y: auto;
+		margin: 0.75rem 0;
+	}
+
+	.batch-result-item {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.batch-result-item:last-child {
+		border-bottom: none;
+	}
+
+	.batch-result-item.failed {
+		background: var(--error-bg);
+	}
+
+	.batch-result-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.badge-success {
+		font-size: 0.7rem;
+		color: var(--success-text);
+		background: var(--success-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+	}
+
+	.badge-error {
+		font-size: 0.7rem;
+		color: var(--error-text);
+		background: var(--error-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+	}
+
+	.batch-error-detail {
+		font-size: 0.8rem;
+		margin-top: 0.25rem;
+	}
+
+	.batch-result-actions {
+		margin-top: 0.25rem;
+	}
+
+	.btn-sm {
+		padding: 0.2rem 0.6rem;
+		font-size: 0.8rem;
+	}
+
+	.batch-warnings-summary {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		margin-top: 0.25rem;
 	}
 
 	@media (max-width: 600px) {

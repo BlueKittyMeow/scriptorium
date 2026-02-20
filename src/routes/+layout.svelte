@@ -85,6 +85,10 @@
 		--search-highlight: #ffe066;
 		--error-bg: #fef2f2;
 		--error-text: #cc4444;
+		--warning-bg: #fef3c7;
+		--warning-text: #92400e;
+		--success-bg: #d1fae5;
+		--success-text: #065f46;
 		--saved: #6a9a5a;
 		--saving: #b8a040;
 		--unsaved: #c87a50;
@@ -123,6 +127,10 @@
 		--search-highlight: #8a6a20;
 		--error-bg: #2a1515;
 		--error-text: #e88888;
+		--warning-bg: #2a2210;
+		--warning-text: #e8c060;
+		--success-bg: #0a2a1a;
+		--success-text: #6ad8a0;
 		--saved: #7aaa6a;
 		--saving: #c8b050;
 		--unsaved: #d88a60;
