@@ -12,7 +12,11 @@
 		title = '',
 		onsave,
 		searchTerm = null,
-		onSearchHighlightDone
+		onSearchHighlightDone,
+		onSnapshotsToggle,
+		onManualSnapshot,
+		registerFlush,
+		contentVersion = 0
 	}: {
 		docId: string;
 		initialContent: string;
@@ -20,6 +24,10 @@
 		onsave: (content: string) => Promise<void>;
 		searchTerm?: string | null;
 		onSearchHighlightDone?: () => void;
+		onSnapshotsToggle?: () => void;
+		onManualSnapshot?: () => Promise<void>;
+		registerFlush?: (flush: () => Promise<void>) => void;
+		contentVersion?: number;
 	} = $props();
 
 	let element: HTMLDivElement;
@@ -86,6 +94,24 @@
 		saveTimeout = setTimeout(triggerSave, 2000);
 	}
 
+	/** Flush any pending save immediately. Returns when save completes. */
+	async function flushSave() {
+		clearTimeout(saveTimeout);
+		if (saveStatus === 'unsaved' && editor) {
+			await triggerSave();
+		}
+	}
+
+	let snapshotFlash = $state(false);
+
+	async function handleManualSnapshot() {
+		if (!onManualSnapshot) return;
+		await flushSave();
+		await onManualSnapshot();
+		snapshotFlash = true;
+		setTimeout(() => { snapshotFlash = false; }, 2000);
+	}
+
 	onMount(() => {
 		editor = new Editor({
 			element,
@@ -113,6 +139,7 @@
 			}
 		});
 		updateWordCount();
+		registerFlush?.(flushSave);
 	});
 
 	onDestroy(() => {
@@ -152,6 +179,19 @@
 		saveStatus = 'saved';
 		updateWordCount();
 	}
+
+	// Handle content reload (e.g. after restore) — triggered by contentVersion bump
+	let trackedVersion = 0;
+	$effect(() => {
+		const v = contentVersion;
+		if (v > trackedVersion && editor) {
+			trackedVersion = v;
+			clearTimeout(saveTimeout);
+			editor.commands.setContent(initialContent);
+			saveStatus = 'saved';
+			updateWordCount();
+		}
+	});
 
 	// Handle search term → scroll to match + highlight
 	$effect(() => {
@@ -275,6 +315,16 @@
 	<div class="editor-footer">
 		<span class="word-count">{wordCount.toLocaleString()} words</span>
 		<span class="footer-right">
+			{#if onManualSnapshot}
+				<button class="footer-btn" onclick={handleManualSnapshot} disabled={saveStatus === 'saving'} title="Create manual snapshot">
+					{snapshotFlash ? 'Snapshot saved' : 'Snapshot'}
+				</button>
+			{/if}
+			{#if onSnapshotsToggle}
+				<button class="footer-btn" onclick={onSnapshotsToggle} title="Toggle snapshot timeline">
+					Snapshots
+				</button>
+			{/if}
 			<span class="spellcheck-indicator">{spellcheck ? 'Spellcheck on' : 'Spellcheck off'}</span>
 			<span class="save-status" class:saved={saveStatus === 'saved'} class:saving={saveStatus === 'saving'} class:unsaved={saveStatus === 'unsaved'}>
 				{#if saveStatus === 'saved'}Saved{:else if saveStatus === 'saving'}Saving...{:else}Unsaved changes{/if}
@@ -453,6 +503,25 @@
 		display: flex;
 		gap: 1rem;
 		align-items: center;
+	}
+
+	.footer-btn {
+		background: none;
+		border: 1px solid var(--border-input);
+		border-radius: 4px;
+		padding: 0.15rem 0.5rem;
+		font-size: 0.75rem;
+		color: var(--accent);
+		cursor: pointer;
+	}
+
+	.footer-btn:hover {
+		background: var(--bg-elevated);
+	}
+
+	.footer-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 
 	.spellcheck-indicator {

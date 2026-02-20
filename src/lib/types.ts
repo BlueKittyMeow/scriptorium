@@ -45,6 +45,14 @@ export interface Snapshot {
 	created_at: string;
 }
 
+export interface SnapshotSummary {
+	id: string;
+	document_id: string;
+	word_count: number | null;
+	reason: string;
+	created_at: string;
+}
+
 export interface TreeNode {
 	id: string;
 	type: 'folder' | 'document';

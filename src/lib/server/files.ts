@@ -30,14 +30,14 @@ export function contentPath(novelId: string, docId: string): string {
 	return path.join(getDataRoot(), novelId, 'docs', `${docId}.html`);
 }
 
-/** Get path to a snapshot file */
-export function snapshotPath(novelId: string, docId: string, timestamp: string): string {
+/** Get path to a snapshot file (fileId is typically the snapshot UUID) */
+export function snapshotPath(novelId: string, docId: string, fileId: string): string {
 	validatePathSegment(novelId);
 	validatePathSegment(docId);
-	validatePathSegment(timestamp);
+	validatePathSegment(fileId);
 	const dir = path.join(getDataRoot(), novelId, 'snapshots', docId);
 	fs.mkdirSync(dir, { recursive: true });
-	return path.join(dir, `${timestamp}.html`);
+	return path.join(dir, `${fileId}.html`);
 }
 
 /** Atomic write: write to .tmp, fsync, rename, fsync parent dir */
@@ -73,9 +73,18 @@ export function readContentFile(novelId: string, docId: string): string | null {
 	return fs.readFileSync(p, 'utf-8');
 }
 
-/** Write snapshot file atomically */
-export function writeSnapshotFile(novelId: string, docId: string, timestamp: string, html: string): string {
-	const p = snapshotPath(novelId, docId, timestamp);
+/** Write snapshot file atomically (fileId is typically the snapshot UUID) */
+export function writeSnapshotFile(novelId: string, docId: string, fileId: string, html: string): string {
+	const p = snapshotPath(novelId, docId, fileId);
 	writeFileAtomic(p, html);
 	return p;
+}
+
+/** Read a snapshot file from disk */
+export function readSnapshotFile(filePath: string): string | null {
+	try {
+		return fs.readFileSync(filePath, 'utf-8');
+	} catch {
+		return null;
+	}
 }

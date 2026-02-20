@@ -4,6 +4,10 @@ import fs from 'fs';
 
 // GET /api/documents/:id/snapshots/:snapId — read snapshot content
 export const GET: RequestHandler = async ({ params, locals }) => {
+	// Verify the parent document exists and is not soft-deleted
+	const doc = locals.db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
+	if (!doc) throw error(404, 'Document not found');
+
 	const snapshot = locals.db.prepare(
 		'SELECT * FROM snapshots WHERE id = ? AND document_id = ?'
 	).get(params.snapId, params.id) as any;

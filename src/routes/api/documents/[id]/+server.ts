@@ -47,7 +47,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 		if (shouldSnapshot && html.trim()) {
 			const snapId = uuid();
-			const snapPath = writeSnapshotFile(doc.novel_id, doc.id, now.replace(/[:.]/g, '-'), html);
+			const snapPath = writeSnapshotFile(doc.novel_id, doc.id, snapId, html);
 
 			locals.db.prepare(`
 				INSERT INTO snapshots (id, document_id, content_path, word_count, reason, created_at)

@@ -2,8 +2,10 @@
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import type { TreeNode } from '$lib/types.js';
+	import type { TreeNode, SnapshotSummary } from '$lib/types.js';
 	import Editor from '$lib/components/Editor.svelte';
+	import SnapshotPanel from '$lib/components/SnapshotPanel.svelte';
+	import SnapshotPreview from '$lib/components/SnapshotPreview.svelte';
 
 	let { data } = $props();
 
@@ -22,6 +24,16 @@
 	let searchTimeout: any = $state(null);
 	let searchInputEl: HTMLInputElement;
 	let pendingSearchTerm: string | null = $state(null);
+
+	// Snapshot state
+	let showSnapshots = $state(false);
+	let snapshots: SnapshotSummary[] = $state([]);
+	let snapshotOffset = $state(0);
+	let hasMoreSnapshots = $state(false);
+	let previewingSnapshot: { id: string; content: string } | null = $state(null);
+	let showRestoreConfirm: string | null = $state(null);
+	let editorFlush: (() => Promise<void>) | null = $state(null);
+	let editorContentVersion = $state(0);
 
 	// Novel rename state
 	let editingNovelTitle = $state(false);
@@ -85,6 +97,110 @@
 		updateTreeNodeWordCount(tree, activeDocId, updated.word_count);
 		tree = [...tree]; // trigger reactivity
 	}
+
+	// ─── Snapshot functions ─────────────────────────────────────────────
+
+	async function loadSnapshots(docId: string, reset = true) {
+		if (reset) {
+			snapshotOffset = 0;
+			snapshots = [];
+		}
+		const limit = 50;
+		const res = await fetch(`/api/documents/${docId}/snapshots?limit=${limit}&offset=${snapshotOffset}`);
+		const batch: SnapshotSummary[] = await res.json();
+		if (reset) {
+			snapshots = batch;
+		} else {
+			snapshots = [...snapshots, ...batch];
+		}
+		hasMoreSnapshots = batch.length >= limit;
+		snapshotOffset += batch.length;
+	}
+
+	async function loadMoreSnapshots() {
+		if (!activeDocId) return;
+		await loadSnapshots(activeDocId, false);
+	}
+
+	async function toggleSnapshots() {
+		showSnapshots = !showSnapshots;
+		if (showSnapshots && activeDocId) {
+			await loadSnapshots(activeDocId);
+		}
+		if (!showSnapshots) {
+			previewingSnapshot = null;
+		}
+	}
+
+	async function previewSnapshot(snapId: string) {
+		if (!activeDocId) return;
+		// Flush pending editor save before entering preview
+		if (editorFlush) await editorFlush();
+		const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}`);
+		const snapData = await res.json();
+		previewingSnapshot = { id: snapId, content: snapData.content };
+	}
+
+	function dismissPreview() {
+		previewingSnapshot = null;
+	}
+
+	function requestRestore(snapId: string) {
+		showRestoreConfirm = snapId;
+	}
+
+	async function confirmRestore() {
+		if (!showRestoreConfirm || !activeDocId) return;
+		const snapId = showRestoreConfirm;
+		showRestoreConfirm = null;
+
+		const res = await fetch(`/api/documents/${activeDocId}/restore/${snapId}`, { method: 'POST' });
+		if (!res.ok) return;
+		const result = await res.json();
+
+		// Reload document with restored content
+		const docRes = await fetch(`/api/documents/${activeDocId}`);
+		activeDoc = await docRes.json();
+
+		// Bump contentVersion to tell Editor to reload without save-then-switch
+		editorContentVersion++;
+
+		// Update tree word count
+		updateTreeNodeWordCount(tree, activeDocId, result.document.word_count);
+		tree = [...tree];
+
+		// Close preview, refresh snapshot list
+		previewingSnapshot = null;
+		await loadSnapshots(activeDocId);
+	}
+
+	async function handleManualSnapshot() {
+		if (!activeDocId) return;
+		await fetch(`/api/documents/${activeDocId}/snapshots`, { method: 'POST' });
+		// Refresh snapshot list if panel is open
+		if (showSnapshots) {
+			await loadSnapshots(activeDocId);
+		}
+	}
+
+	function registerEditorFlush(flush: () => Promise<void>) {
+		editorFlush = flush;
+	}
+
+	// Close preview and refresh snapshots when active doc changes while panel is open
+	let prevSnapshotDocId: string | null = null;
+	$effect(() => {
+		const docId = activeDocId;
+		if (docId && showSnapshots && docId !== prevSnapshotDocId) {
+			prevSnapshotDocId = docId;
+			previewingSnapshot = null;
+			loadSnapshots(docId);
+		} else if (!showSnapshots) {
+			prevSnapshotDocId = null;
+		}
+	});
+
+	// ─── Tree helpers ───────────────────────────────────────────────────
 
 	function updateTreeNodeWordCount(nodes: TreeNode[], docId: string, wordCount: number) {
 		for (const n of nodes) {
@@ -440,15 +556,40 @@
 	<!-- Main content -->
 	<main class="editor-area">
 		{#if activeDoc}
-			{#if browser}
-				<Editor
-					docId={activeDoc.id}
-					initialContent={activeDoc.content || ''}
-					title={activeDoc.title}
-					onsave={saveDocument}
-					searchTerm={pendingSearchTerm}
-					onSearchHighlightDone={() => { pendingSearchTerm = null; }}
-				/>
+			<!-- Live editor — hidden during preview, never destroyed -->
+			<div class:hidden={!!previewingSnapshot}>
+				{#if browser}
+					<Editor
+						docId={activeDoc.id}
+						initialContent={activeDoc.content || ''}
+						title={activeDoc.title}
+						onsave={saveDocument}
+						searchTerm={pendingSearchTerm}
+						onSearchHighlightDone={() => { pendingSearchTerm = null; }}
+						onSnapshotsToggle={toggleSnapshots}
+						onManualSnapshot={handleManualSnapshot}
+						registerFlush={registerEditorFlush}
+						contentVersion={editorContentVersion}
+					/>
+				{/if}
+			</div>
+
+			<!-- Read-only preview — shown only during preview -->
+			{#if previewingSnapshot}
+				<div class="snapshot-preview-area">
+					<div class="preview-banner">
+						<span>Viewing snapshot</span>
+						<div class="preview-actions">
+							<button class="btn btn-primary" onclick={() => { if (previewingSnapshot) requestRestore(previewingSnapshot.id); }}>Restore this version</button>
+							<button class="btn btn-secondary" onclick={dismissPreview}>Back to current</button>
+						</div>
+					</div>
+					{#if browser}
+						<div class="preview-scroll">
+							<SnapshotPreview content={previewingSnapshot.content} />
+						</div>
+					{/if}
+				</div>
 			{/if}
 		{:else}
 			<div class="no-doc">
@@ -456,6 +597,18 @@
 			</div>
 		{/if}
 	</main>
+
+	<!-- Snapshot panel -->
+	{#if showSnapshots && activeDocId}
+		<SnapshotPanel
+			{snapshots}
+			activeSnapshotId={previewingSnapshot?.id ?? null}
+			onPreview={previewSnapshot}
+			onRestore={requestRestore}
+			onClose={() => { showSnapshots = false; previewingSnapshot = null; }}
+			onLoadMore={hasMoreSnapshots ? loadMoreSnapshots : undefined}
+		/>
+	{/if}
 </div>
 
 <!-- New item modal -->
@@ -472,6 +625,20 @@
 			<div class="modal-actions">
 				<button class="btn btn-secondary" onclick={() => showNewModal = false}>Cancel</button>
 				<button class="btn btn-primary" onclick={createItem} disabled={!newItemTitle.trim()}>Create</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Restore confirmation modal -->
+{#if showRestoreConfirm}
+	<div class="modal-backdrop" onclick={() => showRestoreConfirm = null} role="presentation">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showRestoreConfirm = null)} role="dialog" aria-modal="true" tabindex="-1">
+			<h2>Restore to this version?</h2>
+			<p class="modal-body">Your current document will be saved as a snapshot before restoring. Nothing will be lost.</p>
+			<div class="modal-actions">
+				<button class="btn btn-secondary" onclick={() => showRestoreConfirm = null}>Cancel</button>
+				<button class="btn btn-primary" onclick={confirmRestore}>Restore</button>
 			</div>
 		</div>
 	</div>
@@ -863,6 +1030,45 @@
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.hidden {
+		display: none;
+	}
+
+	.snapshot-preview-area {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
+
+	.preview-banner {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.5rem 1rem;
+		background: var(--bg-elevated);
+		border-bottom: 2px solid var(--saving);
+		font-size: 0.85rem;
+		color: var(--text-heading);
+	}
+
+	.preview-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.preview-scroll {
+		flex: 1;
+		overflow-y: auto;
+		background: var(--bg-surface);
+	}
+
+	.modal-body {
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+		margin-bottom: 1rem;
+		line-height: 1.5;
 	}
 
 	.no-doc {
