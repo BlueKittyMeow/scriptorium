@@ -113,28 +113,41 @@
 
 	onDestroy(() => {
 		clearTimeout(saveTimeout);
-		if (editor && saveStatus === 'unsaved') {
-			onsave?.(editor.getHTML());
+		if (editor && saveStatus === 'unsaved' && currentDocId) {
+			// Use keepalive to ensure the save completes even during page unload
+			fetch(`/api/documents/${currentDocId}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ content: editor.getHTML() }),
+				keepalive: true
+			});
 		}
 		editor?.destroy();
 	});
 
-	// Handle doc changes
+	// Handle doc changes — save old content before switching
 	$effect(() => {
 		const newDocId = docId;
 		if (newDocId !== currentDocId && editor) {
-			if (currentDocId && saveStatus === 'unsaved') {
-				clearTimeout(saveTimeout);
-				onsave?.(editor.getHTML());
-			}
-			editor.commands.setContent(initialContent);
-			currentDocId = newDocId;
-			saveStatus = 'saved';
-			updateWordCount();
+			switchDocument(newDocId);
 		} else if (!currentDocId) {
 			currentDocId = newDocId;
 		}
 	});
+
+	async function switchDocument(newDocId: string) {
+		if (currentDocId && saveStatus === 'unsaved' && editor) {
+			clearTimeout(saveTimeout);
+			try {
+				await onsave(editor.getHTML());
+			} catch { /* best effort */ }
+		}
+		if (!editor) return;
+		editor.commands.setContent(initialContent);
+		currentDocId = newDocId;
+		saveStatus = 'saved';
+		updateWordCount();
+	}
 
 	// Handle search term → scroll to match + highlight
 	$effect(() => {

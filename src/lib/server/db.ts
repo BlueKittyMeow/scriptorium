@@ -22,6 +22,7 @@ export function getDb(): Database.Database {
 	// Enable WAL mode for concurrent reads during writes
 	_db.pragma('journal_mode = WAL');
 	_db.pragma('foreign_keys = ON');
+	_db.pragma('busy_timeout = 5000');
 
 	// Run schema
 	_db.exec(SCHEMA);

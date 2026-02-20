@@ -126,8 +126,20 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 	const binderItems = project.ScrivenerProject.Binder.BinderItem;
 	const items = Array.isArray(binderItems) ? binderItems : [binderItems];
 
-	for (const item of items) {
-		await walkBinderItem(db, item, novelId, null, docsDir, labels, statuses, report, 1.0);
+	try {
+		let rootSort = 1.0;
+		for (const item of items) {
+			await walkBinderItem(db, item, novelId, null, docsDir, labels, statuses, report, rootSort);
+			rootSort += 1.0;
+		}
+	} catch (err: any) {
+		// Roll back: remove all data for this novel so no partial import remains
+		db.prepare('DELETE FROM documents_fts WHERE doc_id IN (SELECT id FROM documents WHERE novel_id = ?)').run(novelId);
+		db.prepare('DELETE FROM documents WHERE novel_id = ?').run(novelId);
+		db.prepare('DELETE FROM folders WHERE novel_id = ?').run(novelId);
+		db.prepare('DELETE FROM novels WHERE id = ?').run(novelId);
+		report.errors.push(`Import aborted: ${err.message}`);
+		return report;
 	}
 
 	return report;

@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { softDeleteNovel } from '$lib/server/tree-ops.js';
 
 // GET /api/novels/:id
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -44,17 +45,10 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const existing = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!existing) throw error(404, 'Novel not found');
 
-	const softDelete = locals.db.transaction(() => {
-		locals.db.prepare('UPDATE novels SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, params.id);
-		locals.db.prepare('UPDATE folders SET deleted_at = ?, updated_at = ? WHERE novel_id = ? AND deleted_at IS NULL').run(now, now, params.id);
-		locals.db.prepare('UPDATE documents SET deleted_at = ?, updated_at = ? WHERE novel_id = ? AND deleted_at IS NULL').run(now, now, params.id);
-		// Remove from FTS
-		const docs = locals.db.prepare('SELECT id FROM documents WHERE novel_id = ?').all(params.id) as { id: string }[];
-		for (const doc of docs) {
-			locals.db.prepare('DELETE FROM documents_fts WHERE doc_id = ?').run(doc.id);
-		}
+	const doSoftDelete = locals.db.transaction(() => {
+		softDeleteNovel(locals.db, params.id, now);
 	});
-	softDelete();
+	doSoftDelete();
 
 	return json({ success: true });
 };
