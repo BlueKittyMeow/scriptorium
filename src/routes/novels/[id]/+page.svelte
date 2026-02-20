@@ -557,7 +557,7 @@
 	<main class="editor-area">
 		{#if activeDoc}
 			<!-- Live editor — hidden during preview, never destroyed -->
-			<div class:hidden={!!previewingSnapshot}>
+			<div class="editor-wrapper" class:hidden={!!previewingSnapshot}>
 				{#if browser}
 					<Editor
 						docId={activeDoc.id}
@@ -1032,6 +1032,12 @@
 		flex-direction: column;
 	}
 
+	.editor-wrapper {
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
 	.hidden {
 		display: none;
 	}
@@ -1039,7 +1045,8 @@
 	.snapshot-preview-area {
 		display: flex;
 		flex-direction: column;
-		height: 100%;
+		flex: 1;
+		min-height: 0;
 	}
 
 	.preview-banner {
