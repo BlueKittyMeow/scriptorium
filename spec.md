@@ -525,11 +525,21 @@ MyNovel.scriv/
 - POST /api/documents/:id/restore/:snapshotId
 
 ### Compile/Export
-- POST /api/novels/:id/compile (generate export)
-  - Body: `{ format: "docx"|"epub"|"pdf"|"markdown", include_ids: [...], config_id: "..." }`
-- GET  /api/novels/:id/compile/configs (saved compile configurations)
-- POST /api/novels/:id/compile/configs (save a new compile configuration)
-- GET  /api/novels/:id/compile/preview (HTML preview of compiled output)
+- POST /api/novels/:id/compile (generate export — returns binary download)
+  - Body: `{ format: "docx"|"epub"|"pdf"|"markdown", configId?: "..." }`
+  - Returns: binary file with Content-Disposition attachment header
+  - Pipeline: tree-walk → assemble HTML (title page + chapters) → Pandoc stdin/stdout
+  - PDF engine: wkhtmltopdf (no LaTeX dependency)
+- GET  /api/novels/:id/compile/preview (HTML preview — no Pandoc needed)
+  - Returns: text/html with CSP header blocking scripts
+  - Query: `?configId=...` to use saved config's include_ids
+- GET  /api/novels/:id/compile/configs (list saved compile configurations)
+- POST /api/novels/:id/compile/configs (create new configuration)
+  - Body: `{ name, format, include_ids?: string[] }`
+- PUT  /api/novels/:id/compile/configs/:configId (update configuration)
+- DELETE /api/novels/:id/compile/configs/:configId (delete configuration)
+- PATCH /api/novels/:id/tree/nodes/:nodeId (compile_include toggle)
+  - Body: `{ compile_include: true|false }`
 
 ### Characters & Links (Phase 4)
 - CRUD for characters
@@ -582,15 +592,20 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 - [x] Pagination (limit/offset) for snapshot lists
 - [x] Bug fixes: snapshot filenames use UUID not timestamp, secondary sort key, transaction wrapping, deleted_at checks, SnapshotSummary type without content_path
 
-### Phase 1b: Compile/Export 🔧
+### Phase 1b: Compile/Export ✅
 *Pulled forward from Phase 5 — no dependency on auth or sync*
 
-- [ ] Pandoc integration (docx, epub, PDF, markdown output)
-  - Compile = concatenate manuscript documents in binder order
-  - **Per-document include/exclude toggle** — uncheck chapters that aren't ready (compile_include already in DB schema)
-  - Compile preview before export (HTML)
-  - Save compile configurations (e.g., "Full manuscript", "First three chapters", "Contest submission")
-  - Front/back matter templates (title page, copyright, dedication)
+- [x] Pandoc integration (docx, epub, PDF, markdown output via wkhtmltopdf)
+  - Tree-walk collects documents in binder sort_order, skips deleted and compile_include=0
+  - Assembled HTML: title page (title, subtitle, date) + chapter sections
+  - Pandoc via `spawn`/`execFile` (stdin piping, no shell injection)
+- [x] Per-document include/exclude toggle in CompileDialog checklist
+  - PATCH endpoint for compile_include, pending-aware UI (disables export while saving)
+- [x] Compile preview (pure HTML in new tab, CSP-protected)
+- [x] Saved compile configurations CRUD (compile_configs table, API endpoints)
+- [x] Title page auto-generation (novel title, subtitle, date)
+- [x] CompileDialog UI: format selector, document checklist, preview/export buttons
+- [x] Code review fixes: removed broken double-invocation, XSS prevention, O(N) tree-walk, COALESCE/null fix, missing-file warnings
 
 ### Interstitial: Theming ✅
 *Pulled forward from Phase 5*
@@ -737,8 +752,13 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
   - **Compile/export pulled forward to Phase 1b** — no dependency on auth or sync; Pandoc integration is next
   - **Phase 5 slimmed** — compile/export and theming moved to earlier phases; remaining: corkboard, word count targets, focus mode, extended themes, Docker
 
+- **v0.6** — Phase 1b complete. Changes:
+  - **Compile/export marked complete** — Pandoc integration (docx, epub, PDF, markdown), CompileDialog UI, tree-walk document collection, HTML assembly with title page, compile_include toggle, saved configurations CRUD, HTML preview with CSP
+  - **API docs expanded** — compile endpoint details (body format, pipeline, PDF engine), preview query params, PUT/DELETE for configs, compile_include toggle via PATCH
+  - **Code review fixes** — broken double-invocation removed, XSS prevention via CSP, O(N) tree-walk with Map pre-indexing, COALESCE/null bug fixed, missing-file warnings in assembler, pending-toggle tracking in UI, JSON.parse guarded
+
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.5
+— Scriptorium design document, v0.6
