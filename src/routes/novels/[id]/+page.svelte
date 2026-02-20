@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import type { TreeNode } from '$lib/types.js';
@@ -22,6 +22,10 @@
 	let searchTimeout: any = $state(null);
 	let searchInputEl: HTMLInputElement;
 	let pendingSearchTerm: string | null = $state(null);
+
+	// Novel rename state
+	let editingNovelTitle = $state(false);
+	let novelTitleDraft = $state('');
 
 	// Drag and drop state
 	let draggedNode: TreeNode | null = $state(null);
@@ -188,6 +192,21 @@
 		}
 	}
 
+	async function renameNovel() {
+		const trimmed = novelTitleDraft.trim();
+		if (!trimmed || trimmed === data.novel.title) {
+			editingNovelTitle = false;
+			return;
+		}
+		await fetch(`/api/novels/${novelId}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: trimmed })
+		});
+		data.novel.title = trimmed;
+		editingNovelTitle = false;
+	}
+
 	// Autofocus search input when panel opens
 	$effect(() => {
 		if (showSearch && searchInputEl) {
@@ -340,7 +359,18 @@
 	<aside class="sidebar" class:collapsed={!sidebarOpen}>
 		<div class="sidebar-header">
 			<a href="/" class="back-link">← Library</a>
-			<h2>{data.novel.title}</h2>
+			{#if editingNovelTitle}
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="novel-title-input"
+					bind:value={novelTitleDraft}
+					onblur={renameNovel}
+					onkeydown={(e) => { if (e.key === 'Enter') renameNovel(); if (e.key === 'Escape') editingNovelTitle = false; }}
+					autofocus
+				/>
+			{:else}
+				<h2 ondblclick={() => { editingNovelTitle = true; novelTitleDraft = data.novel.title; }} title="Double-click to rename">{data.novel.title}</h2>
+			{/if}
 			<button class="sidebar-toggle" onclick={() => sidebarOpen = !sidebarOpen}>
 				{sidebarOpen ? '◀' : '▶'}
 			</button>
@@ -367,7 +397,7 @@
 						{#if searchResults.length > 0}
 							<div class="search-results">
 								{#each searchResults as result}
-									<button class="search-result" onclick={() => { pendingSearchTerm = searchQuery; selectDocument(result.id); showSearch = false; searchQuery = ''; searchResults = []; }}>
+									<button class="search-result" onclick={async () => { const term = searchQuery; showSearch = false; searchQuery = ''; searchResults = []; await selectDocument(result.id); await tick(); pendingSearchTerm = term; }}>
 										<span class="result-title">{result.title}</span>
 										<span class="result-snippet">{@html result.snippet}</span>
 									</button>
@@ -547,6 +577,22 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: default;
+	}
+
+	.novel-title-input {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #3a2e26;
+		border: 1px solid #5c4a3a;
+		border-radius: 4px;
+		padding: 0.1rem 0.3rem;
+		width: 100%;
+		background: white;
+	}
+
+	.novel-title-input:focus {
+		outline: none;
 	}
 
 	.sidebar-toggle {

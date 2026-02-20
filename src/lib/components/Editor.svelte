@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Editor } from '@tiptap/core';
+	import { Editor, Extension } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
 	import Placeholder from '@tiptap/extension-placeholder';
+	import { Plugin, PluginKey } from '@tiptap/pm/state';
+	import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 	let {
 		docId,
@@ -28,6 +30,30 @@
 	let saveTimeout: any = null;
 	let currentDocId = $state('');
 	let spellcheck = $state(true);
+
+	// ProseMirror decoration plugin for search highlights
+	const highlightKey = new PluginKey('searchHighlight');
+	const SearchHighlight = Extension.create({
+		name: 'searchHighlight',
+		addProseMirrorPlugins() {
+			return [
+				new Plugin({
+					key: highlightKey,
+					state: {
+						init: () => DecorationSet.empty,
+						apply: (tr, decoSet) => {
+							const meta = tr.getMeta(highlightKey);
+							if (meta !== undefined) return meta;
+							return decoSet.map(tr.mapping, tr.doc);
+						}
+					},
+					props: {
+						decorations: (state) => highlightKey.getState(state)
+					}
+				})
+			];
+		}
+	});
 
 	function countWords(text: string): number {
 		return text.trim().split(/\s+/).filter(Boolean).length;
@@ -65,7 +91,8 @@
 				}),
 				Placeholder.configure({
 					placeholder: 'Begin writing...'
-				})
+				}),
+				SearchHighlight
 			],
 			content: initialContent,
 			editorProps: {
@@ -119,55 +146,55 @@
 	});
 
 	function scrollToMatch(term: string) {
-		if (!element || !scrollContainer) return;
-
-		const tiptapEl = element.querySelector('.tiptap');
-		if (!tiptapEl) return;
-
-		// Use TreeWalker to find text nodes containing the search term
-		const walker = document.createTreeWalker(tiptapEl, NodeFilter.SHOW_TEXT);
-		const lowerTerm = term.toLowerCase();
-		let targetNode: Text | null = null;
-		let targetOffset = 0;
-
-		while (walker.nextNode()) {
-			const textNode = walker.currentNode as Text;
-			const idx = textNode.textContent?.toLowerCase().indexOf(lowerTerm) ?? -1;
-			if (idx >= 0) {
-				targetNode = textNode;
-				targetOffset = idx;
-				break;
-			}
+		if (!editor) {
+			onSearchHighlightDone?.();
+			return;
 		}
 
-		if (targetNode && targetNode.parentElement) {
-			// Create a temporary highlight span
-			const range = document.createRange();
-			range.setStart(targetNode, targetOffset);
-			range.setEnd(targetNode, Math.min(targetOffset + term.length, targetNode.textContent?.length ?? 0));
+		const { doc } = editor.state;
+		const lowerTerm = term.toLowerCase();
+		let matchFrom = -1;
+		let matchTo = -1;
 
-			const highlight = document.createElement('span');
-			highlight.className = 'search-highlight';
-			range.surroundContents(highlight);
+		// Search through ProseMirror document text nodes
+		doc.descendants((node, pos) => {
+			if (matchFrom >= 0) return false;
+			if (node.isText && node.text) {
+				const idx = node.text.toLowerCase().indexOf(lowerTerm);
+				if (idx >= 0) {
+					matchFrom = pos + idx;
+					matchTo = matchFrom + term.length;
+					return false;
+				}
+			}
+		});
 
-			// Scroll into view
-			highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		if (matchFrom >= 0) {
+			// Add highlight decoration via ProseMirror plugin
+			const deco = Decoration.inline(matchFrom, matchTo, { class: 'search-highlight' });
+			const decoSet = DecorationSet.create(doc, [deco]);
+			editor.view.dispatch(
+				editor.state.tr.setMeta(highlightKey, decoSet)
+			);
 
-			// Fade out after 5 seconds
+			// Scroll to the match
+			editor.chain()
+				.setTextSelection(matchFrom)
+				.scrollIntoView()
+				.run();
+
+			// Start fade after 3s
 			setTimeout(() => {
-				highlight.classList.add('fading');
+				const el = element?.querySelector('.search-highlight');
+				el?.classList.add('fading');
 			}, 3000);
 
+			// Remove decoration after 5s
 			setTimeout(() => {
-				// Unwrap the highlight span
-				const parent = highlight.parentNode;
-				if (parent) {
-					while (highlight.firstChild) {
-						parent.insertBefore(highlight.firstChild, highlight);
-					}
-					parent.removeChild(highlight);
-					// Normalize to merge adjacent text nodes
-					parent.normalize();
+				if (editor) {
+					editor.view.dispatch(
+						editor.state.tr.setMeta(highlightKey, DecorationSet.empty)
+					);
 				}
 			}, 5000);
 		}

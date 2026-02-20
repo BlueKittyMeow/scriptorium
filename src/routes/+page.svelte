@@ -59,6 +59,21 @@
 		}
 	}
 
+	let renamingNovelId: string | null = $state(null);
+	let renamingNovelTitle = $state('');
+
+	async function renameNovel(novelId: string) {
+		const trimmed = renamingNovelTitle.trim();
+		if (!trimmed) { renamingNovelId = null; return; }
+		await fetch(`/api/novels/${novelId}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: trimmed })
+		});
+		renamingNovelId = null;
+		await loadNovels();
+	}
+
 	function formatWordCount(count: number): string {
 		if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
 		return `${count} words`;
@@ -87,7 +102,22 @@
 		<div class="novel-grid">
 			{#each novels as novel}
 				<a class="novel-card" href="/novels/{novel.id}">
-					<h2>{novel.title}</h2>
+					<div class="novel-card-header">
+						{#if renamingNovelId === novel.id}
+							<!-- svelte-ignore a11y_autofocus -->
+							<input
+								class="novel-rename-input"
+								bind:value={renamingNovelTitle}
+								onclick={(e) => e.preventDefault()}
+								onblur={() => renameNovel(novel.id)}
+								onkeydown={(e) => { if (e.key === 'Enter') renameNovel(novel.id); if (e.key === 'Escape') renamingNovelId = null; }}
+								autofocus
+							/>
+						{:else}
+							<h2>{novel.title}</h2>
+							<button class="rename-btn" onclick={(e) => { e.preventDefault(); renamingNovelId = novel.id; renamingNovelTitle = novel.title; }} title="Rename novel">✎</button>
+						{/if}
+					</div>
 					{#if novel.subtitle}
 						<p class="novel-subtitle">{novel.subtitle}</p>
 					{/if}
@@ -270,10 +300,49 @@
 		box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 	}
 
+	.novel-card-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
 	.novel-card h2 {
 		font-size: 1.1rem;
 		font-weight: 600;
 		margin-bottom: 0.25rem;
+		flex: 1;
+	}
+
+	.rename-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.85rem;
+		color: #a89a8a;
+		padding: 0.1rem 0.25rem;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	.novel-card:hover .rename-btn {
+		opacity: 1;
+	}
+
+	.rename-btn:hover {
+		color: #5c4a3a;
+	}
+
+	.novel-rename-input {
+		font-size: 1.1rem;
+		font-weight: 600;
+		border: 1px solid #5c4a3a;
+		border-radius: 4px;
+		padding: 0.15rem 0.4rem;
+		width: 100%;
+	}
+
+	.novel-rename-input:focus {
+		outline: none;
 	}
 
 	.novel-subtitle {
