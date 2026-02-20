@@ -137,6 +137,7 @@
 		// Flush pending editor save before entering preview
 		if (editorFlush) await editorFlush();
 		const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}`);
+		if (!res.ok) return;
 		const snapData = await res.json();
 		previewingSnapshot = { id: snapId, content: snapData.content };
 	}
@@ -176,7 +177,8 @@
 
 	async function handleManualSnapshot() {
 		if (!activeDocId) return;
-		await fetch(`/api/documents/${activeDocId}/snapshots`, { method: 'POST' });
+		const res = await fetch(`/api/documents/${activeDocId}/snapshots`, { method: 'POST' });
+		if (!res.ok) return;
 		// Refresh snapshot list if panel is open
 		if (showSnapshots) {
 			await loadSnapshots(activeDocId);
@@ -586,7 +588,9 @@
 					</div>
 					{#if browser}
 						<div class="preview-scroll">
-							<SnapshotPreview content={previewingSnapshot.content} />
+							{#key previewingSnapshot.id}
+								<SnapshotPreview content={previewingSnapshot.content} />
+							{/key}
 						</div>
 					{/if}
 				</div>
@@ -604,7 +608,6 @@
 			{snapshots}
 			activeSnapshotId={previewingSnapshot?.id ?? null}
 			onPreview={previewSnapshot}
-			onRestore={requestRestore}
 			onClose={() => { showSnapshots = false; previewingSnapshot = null; }}
 			onLoadMore={hasMoreSnapshots ? loadMoreSnapshots : undefined}
 		/>

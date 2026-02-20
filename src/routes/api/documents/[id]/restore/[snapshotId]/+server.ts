@@ -24,37 +24,37 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 	// 4. Read current document content from disk
 	const currentContent = readContentFile(doc.novel_id, doc.id) || '';
 
-	// 5. Write pre-restore snapshot file (atomic)
+	// 5. Write pre-restore snapshot file (atomic — preserves current content)
 	const preRestoreId = uuid();
 	const preRestorePath = writeSnapshotFile(doc.novel_id, doc.id, preRestoreId, currentContent);
 
-	// 6. Write restored content to document file (atomic)
-	writeContentFile(doc.novel_id, doc.id, snapshotContent);
-
-	// 7. DB transaction: all metadata updates atomic
+	// 6. DB transaction: all metadata updates atomic
 	const restoredPlainText = stripHtml(snapshotContent);
 	const restoredWordCount = countWords(restoredPlainText);
 	const currentWordCount = countWords(stripHtml(currentContent));
 
 	const doRestore = locals.db.transaction(() => {
-		// 7a. Insert pre-restore snapshot row
+		// 6a. Insert pre-restore snapshot row
 		locals.db.prepare(`
 			INSERT INTO snapshots (id, document_id, content_path, word_count, reason, created_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`).run(preRestoreId, doc.id, preRestorePath, currentWordCount, 'pre-restore', now);
 
-		// 7b. Update document metadata
+		// 6b. Update document metadata
 		locals.db.prepare(`
 			UPDATE documents SET word_count = ?, updated_at = ?, last_snapshot_at = ? WHERE id = ?
 		`).run(restoredWordCount, now, now, doc.id);
 
-		// 7c. Update FTS index with restored plain text
+		// 6c. Update FTS index with restored plain text
 		locals.db.prepare('DELETE FROM documents_fts WHERE doc_id = ?').run(doc.id);
 		locals.db.prepare('INSERT INTO documents_fts (doc_id, title, content) VALUES (?, ?, ?)').run(
 			doc.id, doc.title, restoredPlainText
 		);
 	});
 	doRestore();
+
+	// 7. Write restored content to document file (atomic — only after transaction succeeds)
+	writeContentFile(doc.novel_id, doc.id, snapshotContent);
 
 	// 8. Return updated document + pre-restore snapshot ID
 	const updated = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);

@@ -299,3 +299,79 @@ describe('Layer 4: manual snapshot', () => {
 		expect(source).toMatch(/snapshot/i);
 	});
 });
+
+// ─── Code Review Findings ────────────────────────────────────────────
+
+describe('Review finding 1: SnapshotPreview keyed re-render', () => {
+	it('SnapshotPreview should be wrapped in {#key} to re-mount on snapshot switch', () => {
+		const source = fs.readFileSync('src/routes/novels/[id]/+page.svelte', 'utf-8');
+		// Without {#key}, switching between snapshots leaves stale TipTap content
+		expect(source).toMatch(/{#key[\s\S]*?SnapshotPreview/);
+	});
+});
+
+describe('Review finding 2: no unused onRestore prop', () => {
+	it('SnapshotPanel should not declare an unused onRestore prop', () => {
+		const source = fs.readFileSync('src/lib/components/SnapshotPanel.svelte', 'utf-8');
+		expect(source).not.toContain('onRestore');
+	});
+
+	it('workspace should not pass onRestore to SnapshotPanel', () => {
+		const source = fs.readFileSync('src/routes/novels/[id]/+page.svelte', 'utf-8');
+		const panelMatch = source.match(/<SnapshotPanel[\s\S]*?\/>/);
+		expect(panelMatch).toBeTruthy();
+		expect(panelMatch![0]).not.toContain('onRestore');
+	});
+});
+
+describe('Review finding 3: restore file write ordering', () => {
+	it('restore endpoint should write document file AFTER the DB transaction', () => {
+		const source = fs.readFileSync('src/routes/api/documents/[id]/restore/[snapshotId]/+server.ts', 'utf-8');
+		const doRestoreCallIdx = source.indexOf('doRestore()');
+		const writeContentIdx = source.lastIndexOf('writeContentFile');
+		// Document file must not be overwritten until transaction succeeds
+		expect(doRestoreCallIdx).toBeGreaterThan(-1);
+		expect(writeContentIdx).toBeGreaterThan(doRestoreCallIdx);
+	});
+});
+
+describe('Review finding 4: error handling in snapshot operations', () => {
+	it('previewSnapshot should check response status', () => {
+		const source = fs.readFileSync('src/routes/novels/[id]/+page.svelte', 'utf-8');
+		const start = source.indexOf('async function previewSnapshot');
+		const end = source.indexOf('\n\t}', start);
+		const funcBody = source.slice(start, end);
+		expect(funcBody).toMatch(/!res\.ok/);
+	});
+
+	it('handleManualSnapshot should check response status', () => {
+		const source = fs.readFileSync('src/routes/novels/[id]/+page.svelte', 'utf-8');
+		const start = source.indexOf('async function handleManualSnapshot');
+		const end = source.indexOf('\n\t}', start);
+		const funcBody = source.slice(start, end);
+		expect(funcBody).toMatch(/!res\.ok/);
+	});
+});
+
+describe('Review finding 5: word count performance', () => {
+	it('onTransaction should not call expensive full-document word count', () => {
+		const source = fs.readFileSync('src/lib/components/Editor.svelte', 'utf-8');
+		const start = source.indexOf('onTransaction:');
+		const end = source.indexOf('}', start);
+		const handler = source.slice(start, end);
+		// Should not call updateWordCount (which iterates entire document via getText)
+		expect(handler).not.toContain('updateWordCount');
+	});
+
+	it('Editor should have a selection-only word count update function', () => {
+		const source = fs.readFileSync('src/lib/components/Editor.svelte', 'utf-8');
+		expect(source).toContain('updateSelectionWordCount');
+	});
+});
+
+describe('Review finding 6: indexOf optimization in SnapshotPanel', () => {
+	it('SnapshotPanel should not use indexOf for global index lookup', () => {
+		const source = fs.readFileSync('src/lib/components/SnapshotPanel.svelte', 'utf-8');
+		expect(source).not.toContain('.indexOf(');
+	});
+});

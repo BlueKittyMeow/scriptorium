@@ -75,6 +75,13 @@
 	function updateWordCount() {
 		if (editor) {
 			wordCount = countWords(editor.getText());
+			updateSelectionWordCount();
+		}
+	}
+
+	/** Lightweight selection-only count — safe to call on every transaction */
+	function updateSelectionWordCount() {
+		if (editor) {
 			const { from, to } = editor.state.selection;
 			if (from !== to) {
 				selectionWordCount = countWords(editor.state.doc.textBetween(from, to, ' '));
@@ -143,7 +150,7 @@
 			},
 			onTransaction: () => {
 				editor = editor;
-				updateWordCount();
+				updateSelectionWordCount();
 			}
 		});
 		updateWordCount();

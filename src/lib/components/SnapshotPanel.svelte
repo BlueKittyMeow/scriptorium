@@ -5,19 +5,18 @@
 		snapshots = [],
 		activeSnapshotId = null,
 		onPreview,
-		onRestore,
 		onClose,
 		onLoadMore
 	}: {
 		snapshots: SnapshotSummary[];
 		activeSnapshotId?: string | null;
 		onPreview: (snapId: string) => void;
-		onRestore: (snapId: string) => void;
 		onClose: () => void;
 		onLoadMore?: () => void;
 	} = $props();
 
 	const grouped = $derived(groupByDay(snapshots));
+	const indexMap = $derived(new Map(snapshots.map((s, i) => [s.id, i])));
 
 	function groupByDay(items: SnapshotSummary[]): Map<string, SnapshotSummary[]> {
 		const groups = new Map<string, SnapshotSummary[]>();
@@ -82,7 +81,7 @@
 				<div class="day-group">
 					<div class="day-header">{dayLabel}</div>
 					{#each daySnapshots as snap, i}
-						{@const globalIndex = snapshots.indexOf(snap)}
+						{@const globalIndex = indexMap.get(snap.id) ?? 0}
 						{@const delta = formatDelta(globalIndex)}
 						<button
 							class="snapshot-entry"
