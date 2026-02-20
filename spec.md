@@ -1,6 +1,6 @@
 # Scriptorium
 ### A preservation-first writing application
-### Design Document v0.5
+### Design Document v0.7
 
 ---
 
@@ -616,6 +616,17 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 - [x] Flash prevention (inline script in app.html)
 - [x] Spellcheck toggle with persistence
 
+### Phase 1c: Batch Import ✅
+*Pulled forward — bulk ingest for multi-novel libraries*
+
+- [x] Recursive `.scriv` scanner (async, depth-limited, symlink-safe, skips hidden/system dirs)
+- [x] Scan endpoint with homedir boundary, tilde expansion, duplicate detection
+- [x] Batch import endpoint with per-path error isolation, homedir boundary, partial success counting
+- [x] Reworked library UI: 7-state import modal, project checklist, select all/deselect, AbortController
+- [x] Warning/success CSS custom properties in theme system
+- [x] Bug fixes: tilde expansion, modal close during scan, prefix bypass, server-side trim
+- [x] Code review fixes (Codex): path-separator-aware homedir check, defense-in-depth trim
+
 ### Phase 1 (remaining): The Writing Room 🖋️
 *Goal: Full local writing experience beyond MVP*
 
@@ -757,8 +768,14 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
   - **API docs expanded** — compile endpoint details (body format, pipeline, PDF engine), preview query params, PUT/DELETE for configs, compile_include toggle via PATCH
   - **Code review fixes** — broken double-invocation removed, XSS prevention via CSP, O(N) tree-walk with Map pre-indexing, COALESCE/null bug fixed, missing-file warnings in assembler, pending-toggle tracking in UI, JSON.parse guarded
 
+- **v0.7** — Phase 1c complete. Changes:
+  - **Batch import marked complete** — recursive `.scriv` scanning, batch API with per-path error isolation, reworked library UI with 7-state import modal
+  - **Security hardening** — homedir boundary with path-separator-aware prefix check, tilde expansion, server-side trim, symlink safety via `dirent.isDirectory()`
+  - **Bug hunt + code review cycle** — 4 bugs found and fixed, then Codex review caught prefix bypass vulnerability
+  - **Test coverage** — 149 tests across 11 files
+
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.6
+— Scriptorium design document, v0.7
