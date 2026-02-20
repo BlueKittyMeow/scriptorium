@@ -24,29 +24,26 @@ export function collectCompileDocuments(
 
 	const result: CompileDocument[] = [];
 
-	function walk(parentId: string | null): void {
-		// Collect documents at this level
-		for (const doc of documents.filter(d => d.parent_id === parentId)) {
-			if (includeIds) {
-				if (includeIds.includes(doc.id)) {
-					result.push({ id: doc.id, title: doc.title, novelId });
-				}
-			} else if (doc.compile_include) {
-				result.push({ id: doc.id, title: doc.title, novelId });
-			}
-		}
-
-		// Recurse into child folders
-		for (const folder of folders.filter(f => f.parent_id === parentId)) {
-			walk(folder.id);
-		}
+	// Pre-index children by parent_id for O(1) lookup (avoids O(N²) repeated .filter())
+	const foldersByParent = new Map<string | null, typeof folders>();
+	for (const f of folders) {
+		const key = f.parent_id;
+		if (!foldersByParent.has(key)) foldersByParent.set(key, []);
+		foldersByParent.get(key)!.push(f);
 	}
 
-	// Sort all items (folders + documents) at each level by sort_order
-	// The tree API sorts folders before documents, but compile needs interleaved sort
+	const docsByParent = new Map<string | null, typeof documents>();
+	for (const d of documents) {
+		const key = d.parent_id;
+		if (!docsByParent.has(key)) docsByParent.set(key, []);
+		docsByParent.get(key)!.push(d);
+	}
+
+	const includeSet = includeIds ? new Set(includeIds) : null;
+
 	function walkSorted(parentId: string | null): void {
-		const childFolders = folders.filter(f => f.parent_id === parentId);
-		const childDocs = documents.filter(d => d.parent_id === parentId);
+		const childFolders = foldersByParent.get(parentId) || [];
+		const childDocs = docsByParent.get(parentId) || [];
 
 		// Merge folders and documents by sort_order
 		const items: { type: 'folder' | 'document'; sort_order: number; id: string; title?: string; compile_include?: number }[] = [
@@ -57,8 +54,8 @@ export function collectCompileDocuments(
 
 		for (const item of items) {
 			if (item.type === 'document') {
-				if (includeIds) {
-					if (includeIds.includes(item.id)) {
+				if (includeSet) {
+					if (includeSet.has(item.id)) {
 						result.push({ id: item.id, title: item.title!, novelId });
 					}
 				} else if (item.compile_include) {

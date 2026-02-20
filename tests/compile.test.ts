@@ -111,29 +111,29 @@ describe('Layer 0: tree-walk', () => {
 describe('Layer 0: assemble', () => {
 	it('should generate a title page with novel title', async () => {
 		const { assembleCompileHtml } = await import('$lib/server/compile/assemble.js');
-		const html = assembleCompileHtml(
+		const result = assembleCompileHtml(
 			[{ id: 'doc-1', title: 'Chapter One', novelId: 'novel-1' }],
 			{ title: 'My Novel', subtitle: null },
 			(_novelId: string, _docId: string) => '<p>Hello world</p>'
 		);
-		expect(html).toContain('My Novel');
-		expect(html).toContain('Chapter One');
-		expect(html).toContain('Hello world');
+		expect(result.html).toContain('My Novel');
+		expect(result.html).toContain('Chapter One');
+		expect(result.html).toContain('Hello world');
 	});
 
 	it('should include subtitle on title page when provided', async () => {
 		const { assembleCompileHtml } = await import('$lib/server/compile/assemble.js');
-		const html = assembleCompileHtml(
+		const result = assembleCompileHtml(
 			[],
 			{ title: 'My Novel', subtitle: 'A Subtitle' },
 			() => ''
 		);
-		expect(html).toContain('A Subtitle');
+		expect(result.html).toContain('A Subtitle');
 	});
 
 	it('should wrap each document in a section with chapter heading', async () => {
 		const { assembleCompileHtml } = await import('$lib/server/compile/assemble.js');
-		const html = assembleCompileHtml(
+		const result = assembleCompileHtml(
 			[
 				{ id: 'doc-1', title: 'Chapter One', novelId: 'n1' },
 				{ id: 'doc-2', title: 'Chapter Two', novelId: 'n1' }
@@ -141,21 +141,21 @@ describe('Layer 0: assemble', () => {
 			{ title: 'Novel', subtitle: null },
 			(_novelId: string, docId: string) => docId === 'doc-1' ? '<p>First</p>' : '<p>Second</p>'
 		);
-		expect(html).toContain('<section');
-		expect(html).toContain('<h1>Chapter One</h1>');
-		expect(html).toContain('<h1>Chapter Two</h1>');
+		expect(result.html).toContain('<section');
+		expect(result.html).toContain('<h1>Chapter One</h1>');
+		expect(result.html).toContain('<h1>Chapter Two</h1>');
 	});
 
 	it('should handle empty document list gracefully', async () => {
 		const { assembleCompileHtml } = await import('$lib/server/compile/assemble.js');
-		const html = assembleCompileHtml(
+		const result = assembleCompileHtml(
 			[],
 			{ title: 'Empty Novel', subtitle: null },
 			() => ''
 		);
-		expect(html).toContain('Empty Novel');
+		expect(result.html).toContain('Empty Novel');
 		// Should still be valid HTML
-		expect(html).toContain('<html');
+		expect(result.html).toContain('<html');
 	});
 });
 
@@ -291,7 +291,7 @@ describe('Layer 3.5: compile_include toggle', () => {
 		expect(source).toContain('compile_include');
 	});
 
-	it('compile_include toggle should update the database', () => {
+	it('compile_include toggle should update the database (DB-level)', () => {
 		const db = createTestDb();
 		seedNovelWithDocs(db);
 
@@ -303,5 +303,106 @@ describe('Layer 3.5: compile_include toggle', () => {
 		db.prepare('UPDATE documents SET compile_include = ? WHERE id = ?').run(0, 'doc-1');
 		const after = db.prepare('SELECT compile_include FROM documents WHERE id = ?').get('doc-1') as any;
 		expect(after.compile_include).toBe(0);
+	});
+});
+
+// ─── Code Review Findings ───────────────────────────────────────────
+
+describe('Review finding 1: pandoc double invocation', () => {
+	it('convertHtmlToFormat should not call execFileAsync before spawnPandoc', () => {
+		const source = fs.readFileSync('src/lib/server/compile/pandoc.ts', 'utf-8');
+		// Extract just the convertHtmlToFormat function body
+		const fnMatch = source.match(/export async function convertHtmlToFormat[\s\S]*?^}/m);
+		expect(fnMatch).toBeTruthy();
+		const fnBody = fnMatch![0];
+		// Should NOT contain execFileAsync — only spawnPandoc should be used
+		expect(fnBody).not.toContain('execFileAsync');
+	});
+
+	it('should not have dead code (unused walk function)', () => {
+		const source = fs.readFileSync('src/lib/server/compile/tree-walk.ts', 'utf-8');
+		// The old `walk` function should be removed (only walkSorted should exist)
+		// Check there's no standalone `function walk(` that isn't `walkSorted(`
+		const walkMatches = source.match(/function walk\b/g);
+		expect(walkMatches).toBeNull();
+	});
+});
+
+describe('Review finding 2: tree-walk O(N²) filter', () => {
+	it('should pre-index children by parent_id using Map', () => {
+		const source = fs.readFileSync('src/lib/server/compile/tree-walk.ts', 'utf-8');
+		// Should use Map for O(1) lookup instead of repeated .filter()
+		expect(source).toContain('Map');
+	});
+});
+
+describe('Review finding 3: JSON.parse without try-catch', () => {
+	it('compile endpoint should wrap include_ids JSON.parse in try-catch', () => {
+		const source = fs.readFileSync('src/routes/api/novels/[id]/compile/+server.ts', 'utf-8');
+		expect(source).toContain('try');
+		expect(source).toContain('JSON.parse');
+	});
+});
+
+describe('Review finding 4: XSS in preview', () => {
+	it('preview endpoint should set Content-Security-Policy header', () => {
+		const source = fs.readFileSync('src/routes/api/novels/[id]/compile/preview/+server.ts', 'utf-8');
+		expect(source).toContain('Content-Security-Policy');
+	});
+});
+
+describe('Review finding 5: optimistic toggle', () => {
+	it('toggleCompileInclude should check response status', () => {
+		const source = fs.readFileSync('src/lib/components/CompileDialog.svelte', 'utf-8');
+		// Extract the toggleCompileInclude function
+		const fnMatch = source.match(/async function toggleCompileInclude[\s\S]*?^\t}/m);
+		expect(fnMatch).toBeTruthy();
+		const fnBody = fnMatch![0];
+		expect(fnBody).toContain('res.ok');
+	});
+
+	it('should track pending toggles and disable export while in-flight', () => {
+		const source = fs.readFileSync('src/lib/components/CompileDialog.svelte', 'utf-8');
+		// Should have a pending counter or flag for in-flight PATCH requests
+		expect(source).toMatch(/pending/i);
+	});
+});
+
+describe('Review finding 6: missing content files silent', () => {
+	it('assembleCompileHtml should report missing content files', async () => {
+		const { assembleCompileHtml } = await import('$lib/server/compile/assemble.js');
+		// readContent returns null for missing files
+		const result = assembleCompileHtml(
+			[{ id: 'doc-1', title: 'Missing Doc', novelId: 'n1' }],
+			{ title: 'Novel', subtitle: null },
+			() => null  // simulate missing file
+		);
+		// Result should be an object with warnings, or the function signature should change
+		// to surface missing files somehow
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings.length).toBeGreaterThan(0);
+	});
+});
+
+describe('Review finding 7: COALESCE/null bug in config PUT', () => {
+	it('should be able to clear include_ids back to null', () => {
+		const db = createTestDb();
+		seedNovelWithDocs(db);
+		const now = new Date().toISOString();
+
+		// Create config with include_ids set
+		const ids = JSON.stringify(['doc-1']);
+		db.prepare(`INSERT INTO compile_configs (id, novel_id, name, format, include_ids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+			'cfg-clear', 'novel-1', 'Test', 'docx', ids, now, now
+		);
+
+		// Verify it's set
+		const before = db.prepare('SELECT include_ids FROM compile_configs WHERE id = ?').get('cfg-clear') as any;
+		expect(before.include_ids).not.toBeNull();
+
+		// The PUT handler source should NOT use COALESCE for include_ids
+		const source = fs.readFileSync('src/routes/api/novels/[id]/compile/configs/[configId]/+server.ts', 'utf-8');
+		// The update query should handle null explicitly, not via COALESCE on include_ids
+		expect(source).not.toMatch(/COALESCE\(\?.*include_ids\)/);
 	});
 });

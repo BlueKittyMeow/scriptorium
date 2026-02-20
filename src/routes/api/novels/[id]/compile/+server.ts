@@ -25,7 +25,14 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		const config = locals.db.prepare('SELECT * FROM compile_configs WHERE id = ? AND novel_id = ?').get(body.configId, params.id) as any;
 		if (!config) throw error(404, 'Compile config not found');
 		if (config.include_ids) {
-			includeIds = JSON.parse(config.include_ids);
+			try {
+				const parsed = JSON.parse(config.include_ids);
+				if (Array.isArray(parsed)) {
+					includeIds = parsed;
+				}
+			} catch {
+				throw error(400, 'Invalid include_ids in compile config');
+			}
 		}
 	}
 
@@ -34,7 +41,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	// Assemble HTML
 	const metadata = { title: novel.title, subtitle: novel.subtitle };
-	const html = assembleCompileHtml(documents, metadata, readContentFile);
+	const { html } = assembleCompileHtml(documents, metadata, readContentFile);
 
 	// Check Pandoc availability
 	const pandocOk = await checkPandocAvailable();

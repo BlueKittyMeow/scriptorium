@@ -21,11 +21,12 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 	const documents = collectCompileDocuments(locals.db, params.id, includeIds);
 	const metadata = { title: novel.title, subtitle: novel.subtitle };
-	const html = assembleCompileHtml(documents, metadata, readContentFile);
+	const { html } = assembleCompileHtml(documents, metadata, readContentFile);
 
 	return new Response(html, {
 		headers: {
-			'Content-Type': 'text/html; charset=utf-8'
+			'Content-Type': 'text/html; charset=utf-8',
+			'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:"
 		}
 	});
 };

@@ -17,18 +17,25 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, `Invalid format. Must be one of: ${VALID_FORMATS.join(', ')}`);
 	}
 
-	const includeIdsJson = body.include_ids !== undefined
-		? (body.include_ids ? JSON.stringify(body.include_ids) : null)
-		: undefined;
+	// Build dynamic SET clause — only update provided fields (allows clearing include_ids to null)
+	const sets: string[] = ['updated_at = ?'];
+	const values: any[] = [now];
 
-	locals.db.prepare(`
-		UPDATE compile_configs SET
-			name = COALESCE(?, name),
-			format = COALESCE(?, format),
-			include_ids = COALESCE(?, include_ids),
-			updated_at = ?
-		WHERE id = ? AND novel_id = ?
-	`).run(body.name || null, body.format || null, includeIdsJson ?? null, now, params.configId, params.id);
+	if (body.name) {
+		sets.push('name = ?');
+		values.push(body.name);
+	}
+	if (body.format) {
+		sets.push('format = ?');
+		values.push(body.format);
+	}
+	if (body.include_ids !== undefined) {
+		sets.push('include_ids = ?');
+		values.push(body.include_ids ? JSON.stringify(body.include_ids) : null);
+	}
+
+	values.push(params.configId, params.id);
+	locals.db.prepare(`UPDATE compile_configs SET ${sets.join(', ')} WHERE id = ? AND novel_id = ?`).run(...values);
 
 	const updated = locals.db.prepare('SELECT * FROM compile_configs WHERE id = ?').get(params.configId);
 	return json(updated);

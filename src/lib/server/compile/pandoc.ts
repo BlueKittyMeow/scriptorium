@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import type { CompileFormat, CompileResult, CompileMetadata } from './types.js';
 import { FORMAT_CONFIG } from './types.js';
@@ -28,17 +28,7 @@ export async function convertHtmlToFormat(
 	const config = FORMAT_CONFIG[format];
 
 	try {
-		const { stdout } = await execFileAsync('pandoc', args, {
-			encoding: 'buffer',
-			maxBuffer: 50 * 1024 * 1024, // 50MB
-			timeout: 60000
-		});
-
-		// For binary formats, stdout is a Buffer via encoding: 'buffer'
-		// For text formats (markdown), stdout is still a Buffer
 		const inputBuffer = Buffer.from(html, 'utf-8');
-
-		// We need to use spawn for stdin piping since execFile doesn't support it directly
 		const result = await spawnPandoc(args, inputBuffer);
 
 		return {
@@ -75,7 +65,6 @@ function buildPandocArgs(format: CompileFormat, metadata: CompileMetadata): stri
 /** Spawn Pandoc with stdin piping for proper binary output handling */
 function spawnPandoc(args: string[], input: Buffer): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
-		const { spawn } = require('child_process');
 		const proc = spawn('pandoc', args, {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			timeout: 60000

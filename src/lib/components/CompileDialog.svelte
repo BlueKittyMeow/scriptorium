@@ -19,6 +19,7 @@
 	let compiling = $state(false);
 	let previewing = $state(false);
 	let errorMsg: string | null = $state(null);
+	let pendingToggles = $state(0);
 
 	// Build a flat list of documents from the tree for the include checklist
 	const flatDocs = $derived(collectDocs(tree));
@@ -47,14 +48,23 @@
 
 	async function toggleCompileInclude(docId: string, currentValue: number) {
 		const newValue = currentValue ? 0 : 1;
-		await fetch(`/api/novels/${novelId}/tree/nodes/${docId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ compile_include: newValue })
-		});
-		// Update local tree state — find the node and toggle it
-		updateTreeNode(tree, docId, newValue);
-		tree = [...tree]; // trigger reactivity
+		pendingToggles++;
+		try {
+			const res = await fetch(`/api/novels/${novelId}/tree/nodes/${docId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ compile_include: newValue })
+			});
+			if (!res.ok) {
+				errorMsg = 'Failed to update document include setting';
+				return;
+			}
+			// Update local tree state — find the node and toggle it
+			updateTreeNode(tree, docId, newValue);
+			tree = [...tree]; // trigger reactivity
+		} finally {
+			pendingToggles--;
+		}
 	}
 
 	function updateTreeNode(nodes: TreeNode[], docId: string, value: number) {
@@ -159,13 +169,13 @@
 			{/if}
 
 			<div class="modal-actions">
-				<button class="btn btn-secondary" onclick={handlePreview} disabled={previewing || flatDocs.length === 0}>
+				<button class="btn btn-secondary" onclick={handlePreview} disabled={previewing || pendingToggles > 0 || flatDocs.length === 0}>
 					{previewing ? 'Opening...' : 'Preview'}
 				</button>
 				<div class="actions-right">
 					<button class="btn btn-secondary" onclick={onClose}>Cancel</button>
-					<button class="btn btn-primary" onclick={handleCompile} disabled={compiling || flatDocs.length === 0}>
-						{compiling ? 'Compiling...' : 'Export'}
+					<button class="btn btn-primary" onclick={handleCompile} disabled={compiling || pendingToggles > 0 || flatDocs.length === 0}>
+						{compiling ? 'Compiling...' : pendingToggles > 0 ? 'Saving...' : 'Export'}
 					</button>
 				</div>
 			</div>

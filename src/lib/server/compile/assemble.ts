@@ -1,5 +1,10 @@
 import type { CompileDocument, CompileMetadata } from './types.js';
 
+export interface AssembleResult {
+	html: string;
+	warnings: string[];
+}
+
 /**
  * Assemble a complete HTML document from compiled documents.
  * Generates a title page and wraps each document in a section with chapter heading.
@@ -12,14 +17,18 @@ export function assembleCompileHtml(
 	documents: CompileDocument[],
 	metadata: CompileMetadata,
 	readContent: (novelId: string, docId: string) => string | null
-): string {
+): AssembleResult {
+	const warnings: string[] = [];
 	const titlePage = buildTitlePage(metadata);
 	const chapters = documents.map(doc => {
-		const content = readContent(doc.novelId, doc.id) || '';
-		return `<section class="chapter">\n<h1>${escapeHtml(doc.title)}</h1>\n${content}\n</section>`;
+		const content = readContent(doc.novelId, doc.id);
+		if (content === null) {
+			warnings.push(`Missing content file for "${doc.title}" (${doc.id})`);
+		}
+		return `<section class="chapter">\n<h1>${escapeHtml(doc.title)}</h1>\n${content || ''}\n</section>`;
 	});
 
-	return `<!DOCTYPE html>
+	const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -39,6 +48,8 @@ ${titlePage}
 ${chapters.join('\n')}
 </body>
 </html>`;
+
+	return { html, warnings };
 }
 
 function buildTitlePage(metadata: CompileMetadata): string {
