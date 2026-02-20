@@ -101,7 +101,7 @@
 	{:else}
 		<div class="novel-grid">
 			{#each novels as novel}
-				<a class="novel-card" href="/novels/{novel.id}">
+				<a class="novel-card" href="/novels/{novel.id}" onclick={(e) => { if (renamingNovelId === novel.id) e.preventDefault(); }}>
 					<div class="novel-card-header">
 						{#if renamingNovelId === novel.id}
 							<!-- svelte-ignore a11y_autofocus -->
@@ -110,7 +110,7 @@
 								bind:value={renamingNovelTitle}
 								onclick={(e) => e.preventDefault()}
 								onblur={() => renameNovel(novel.id)}
-								onkeydown={(e) => { if (e.key === 'Enter') renameNovel(novel.id); if (e.key === 'Escape') renamingNovelId = null; }}
+								onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renameNovel(novel.id); } if (e.key === 'Escape') renamingNovelId = null; }}
 								autofocus
 							/>
 						{:else}
