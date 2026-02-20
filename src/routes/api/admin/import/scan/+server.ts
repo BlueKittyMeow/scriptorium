@@ -7,7 +7,7 @@ import { scanForScrivProjects } from '$lib/server/import/scan.js';
 // POST /api/admin/import/scan — scan a directory for .scriv bundles
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await request.json();
-	const inputPath = body.path;
+	const inputPath = typeof body.path === 'string' ? body.path.trim() : body.path;
 
 	if (!inputPath || typeof inputPath !== 'string') {
 		throw error(400, 'Missing or invalid path');
@@ -26,7 +26,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Safe root boundary: must be under user's home directory
-	if (!resolvedPath.startsWith(homeDir)) {
+	// Use homeDir + '/' to prevent prefix bypass (/home/user matching /home/user2)
+	if (resolvedPath !== homeDir && !resolvedPath.startsWith(homeDir + '/')) {
 		throw error(400, 'Scan path must be within your home directory');
 	}
 

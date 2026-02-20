@@ -55,7 +55,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			continue;
 		}
 
-		if (!resolved.startsWith(homeDir)) {
+		// Use homeDir + '/' to prevent prefix bypass (/home/user matching /home/user2)
+		if (resolved !== homeDir && !resolved.startsWith(homeDir + '/')) {
 			results.push({
 				path: scrivPath,
 				novel_id: '',

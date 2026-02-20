@@ -372,6 +372,35 @@ describe('bug fixes', () => {
 		);
 		expect(source).toMatch(/homeDir|os\.homedir/);
 	});
+
+	// Bug 5 (Codex review): startsWith(homeDir) prefix bypass
+	// /home/user matches /home/user2 — must check with trailing separator
+	it('scan endpoint should use path-separator-aware homedir check', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			'utf8'
+		);
+		// Must check homeDir + '/' or path.sep, not bare startsWith(homeDir)
+		expect(source).toMatch(/startsWith\(homeDir\s*\+\s*['"`]\/['"`]\)/);
+	});
+
+	it('batch endpoint should use path-separator-aware homedir check', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			'utf8'
+		);
+		expect(source).toMatch(/startsWith\(homeDir\s*\+\s*['"`]\/['"`]\)/);
+	});
+
+	// Bug 6 (Codex review): scan endpoint should trim input server-side
+	it('scan endpoint should trim input path', () => {
+		const source = fs.readFileSync(
+			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			'utf8'
+		);
+		// inputPath should be trimmed before expansion/resolution
+		expect(source).toMatch(/\.trim\(\)/);
+	});
 });
 
 // ============================================================
