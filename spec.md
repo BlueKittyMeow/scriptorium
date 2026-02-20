@@ -1,6 +1,6 @@
 # Scriptorium
 ### A preservation-first writing application
-### Design Document v0.3
+### Design Document v0.4
 
 ---
 
@@ -26,10 +26,10 @@ Meanwhile, Lara sees the archival layer: every version of every document, immuta
 │  (Lara's desktop / Pi / VPS)        │
 │                                     │
 │  ┌───────────┐  ┌───────────────┐   │
-│  │  Express   │  │   SQLite DB   │   │
-│  │  API +     │  │  (metadata,   │   │
-│  │  Auth      │  │   versions,   │   │
-│  │            │  │   tree, links) │   │
+│  │ SvelteKit  │  │   SQLite DB   │   │
+│  │ +server.js │  │  (metadata,   │   │
+│  │  endpoints │  │   versions,   │   │
+│  │  + Auth    │  │   tree, links) │   │
 │  └───────────┘  └───────────────┘   │
 │        │                            │
 │  ┌─────────────────────────────┐    │
@@ -54,7 +54,7 @@ Meanwhile, Lara sees the archival layer: every version of every document, immuta
 ## Image Support
 
 ### Storage
-- Originals stored on server: `/data/{user}/{novel-slug}/images/{uuid}.{ext}`
+- Originals stored on server: `/data/{novel-uuid}/images/{uuid}.{ext}`
 - Proxies auto-generated on upload via **sharp** (fast, low memory, Node.js native) at three breakpoints:
   - Thumbnail: 150px (for binder/card views)
   - Medium: 400px (for inline display on mobile)
@@ -217,16 +217,20 @@ Library: Kyla
 
 ### Backend
 - **Runtime:** Node.js (v22)
-- **Framework:** Express.js (simpler session/auth middleware story; Fastify is faster but adds complexity without benefit at this scale)
-- **Database:** SQLite via better-sqlite3 (metadata, tree structure, versions, links, FTS5 search)
-- **Image processing:** sharp (proxy generation)
-- **Content storage:** Files on disk (HTML/JSON, one per document)
+- **Framework:** SvelteKit (`+server.js` API endpoints) — single process, no CORS, built-in adapter-node for deployment. Express deferred unless auth/sync complexity demands it later (see Decisions Made).
+- **Database:** SQLite via better-sqlite3 (metadata, tree structure, versions, links, FTS5 search). DB initialized in `hooks.server.js`, passed via `event.locals`.
+- **Image processing:** sharp (proxy generation, Phase 4+)
+- **Content storage:** Files on disk (HTML, one per document) — the **file is the source of truth** for content
   - Human-readable, greppable, git-friendly
-  - Path: `/data/{user}/{novel-slug}/docs/{doc-id}.html`
-- **Snapshot storage:** `/data/{user}/{novel-slug}/snapshots/{doc-id}/{timestamp}.html`
-- **Auth:** bcrypt + express-session (simple) or Passport.js
+  - Path: `/data/{novel-uuid}/docs/{doc-uuid}.html`
+  - SQLite stores metadata (title, word count, timestamps, tree position) — NOT the full content
+  - FTS5 index mirrors document text for search (updated on save alongside the file)
+  - **Atomic write strategy:** write to `{doc-uuid}.html.tmp` → `fsync` → `rename` to final path (atomic on same filesystem) → update SQLite in transaction. If SQLite update fails, file is orphaned but content is safe. Startup consistency check reconciles.
+- **Snapshot storage:** `/data/{novel-uuid}/snapshots/{doc-uuid}/{timestamp}.html`
+- **Data root:** Configurable via `DATA_ROOT` env variable (default: `./data`). Essential for local setup on any machine.
+- **Auth (Phase 2+):** bcrypt + SvelteKit hooks for session management
   - Stretch: passkeys/WebAuthn for passwordless
-- **Backup:** rclone to Google Drive on cron (server-side only — Kyla never touches this)
+- **Backup (Phase 3+):** rclone to Google Drive on cron (server-side only — Kyla never touches this)
 
 ### Frontend
 - **Framework:** SvelteKit
@@ -254,14 +258,14 @@ Library: Kyla
   - **Session expiry during offline:** save queue persists independently of auth state. On reconnect, if session is expired, client prompts re-auth THEN flushes queue. Queued work is NEVER dropped due to auth failure.
 
 ### Deployment
-- **Phase 1-2:** `localhost:3000` on Lara's machine
+- **MVP–Phase 2:** `localhost:5173` (SvelteKit dev) or built with `adapter-node` on Lara's machine
 - **Phase 3:** Cloudflare Tunnel for external access (free, encrypted)
   - `scriptorium.yourdomain.com` or similar
   - Alternative: Tailscale for family-only access
 - **Stretch:** Docker container for easy deployment to VPS/Pi
   - Single `docker-compose up` to run everything
   - SQLite file + content directory = entire state (easy backup)
-  - **Pi deployment note:** verify sharp ARM builds; consider minimum Pi 3B+ or better for SQLite + image processing + Express under load
+  - **Pi deployment note:** verify sharp ARM builds (Phase 4+); consider minimum Pi 3B+ or better
 
 ---
 
@@ -307,6 +311,8 @@ POST /api/sync
       type: "tree_move",
       entity_id: "doc-uuid-456",
       base_version: 3,
+      old_parent_id: "folder-uuid-111",   // for rollback if move rejected
+      old_sort_order: 1.0,
       new_parent_id: "folder-uuid-789",
       new_sort_order: 2.5,
       updated_at: "2026-02-19T21:10:00Z"
@@ -370,15 +376,32 @@ When `base_version` doesn't match server's current version:
 #### Tree Conflicts (structural changes)
 Tree conflicts are harder than content conflicts. Strategy:
 
-1. **Moves/reorders:** Last-write-wins by timestamp. If client moved doc A to folder X at 9:15pm, and server moved doc A to folder Y at 9:10pm, client wins (more recent). Server's tree state before applying is snapshotted.
+1. **Moves/reorders:** Last-write-wins by timestamp. If client moved doc A to folder X at 9:15pm, and server moved doc A to folder Y at 9:10pm, client wins (more recent). Server's tree state before applying is snapshotted. **Clock skew note:** for a two-user system, minor skew is acceptable. If skew becomes a problem, fall back to server-receive ordering.
 
-2. **Concurrent creation:** Both creations are accepted. If they'd occupy the same sort_order, server adjusts the later one's sort_order to avoid collision.
+2. **Concurrent creation:** Both creations are accepted. If they'd occupy the same sort_order, server adjusts the later one's sort_order to avoid collision. **Server MUST return adjusted sort_order** in the sync response so the client updates its local state.
 
-3. **Move to deleted parent:** If client moves a doc into a folder that was deleted server-side, the move is rejected and the doc stays in its pre-move location. Client is notified: "Folder X was deleted — your document stayed in its original location."
+3. **Move to deleted parent:** If client moves a doc into a folder that was deleted server-side, the move is rejected and the doc stays in its pre-move location. Client is notified: "Folder X was deleted — your document stayed in its original location." **Note:** `tree_move` payload includes `old_parent_id` + `old_sort_order` so the server can deterministically place the doc back, even if the pre-move parent was also moved or deleted. Server response includes `current_parent_id` + `current_sort_order` for rejected moves.
 
 4. **Delete of moved child:** If client deletes a doc that was moved server-side to a new location, the soft-delete still applies (just at its new location). No conflict.
 
-5. **Structural snapshot:** On any tree conflict, the server saves a full tree-state snapshot (JSON of the entire binder structure) for Archivist review.
+5. **Move of deleted child:** If client moves a doc that was soft-deleted server-side, the **delete wins** — the doc remains deleted. Client is notified: "Document was deleted — move not applied."
+
+6. **Cyclic move detection:** Server MUST validate that `new_parent_id` is not a descendant of the node being moved. If Client A moves Folder X into Folder Y while Client B moves Folder Y into Folder X, accepting both creates an unresolvable cycle (nodes vanish from the tree). The server rejects the move that would create a cycle; the earlier move stands.
+
+7. **Structural snapshot:** On any tree conflict, the server saves a full tree-state snapshot (JSON of the entire binder structure) for Archivist review.
+
+#### Sync Batch Processing Order
+Operations within a single sync payload are processed in deterministic order:
+1. **Creates** (novels, folders, documents) — so new entities exist before being referenced
+2. **Updates** (content, metadata) — applied to existing + newly created entities
+3. **Moves** (reparent, reorder) — after entities exist and are updated
+4. **Deletes** (soft-delete) — last, so moves into a to-be-deleted parent are caught
+
+If any operation fails, subsequent dependent operations are skipped. Server returns per-operation status so the client knows exactly what succeeded.
+
+#### Client-Side Optimizations
+- **Coalesce offline updates:** If a document is edited 10 times offline, only the final state needs to sync (not 10 intermediate versions). Client coalesces `document_update` operations per entity before sending.
+- **sort_order feedback:** When renormalization occurs server-side, affected sort_order values are returned in the sync response so clients update their local state.
 
 ### Online Behavior
 When online, the client syncs in near-real-time:
@@ -399,7 +422,7 @@ When online, the client syncs in near-real-time:
 
 ## .scriv Import
 
-**Moved to Phase 2** (per review — RTF edge cases shouldn't block core writing loop).
+**MVP feature** — this is the primary ingest path for existing manuscripts. Basic import (text + structure) is MVP; rich RTF features (embedded images, footnotes, annotations) iterate in Phase 1.
 
 Scrivener projects are directories containing:
 ```
@@ -420,14 +443,16 @@ MyNovel.scriv/
 
 **Import process:**
 1. Parse .scrivx XML → extract binder tree (folders, documents, ordering)
-2. For each document: convert RTF → HTML (via `rtf-parser` or similar)
-   - **Known complexity:** Scrivener RTF can include embedded images, footnotes, annotations, and custom styling. Initial import targets clean text + basic formatting. Rich features iterate in later passes.
+2. For each document: convert RTF → HTML via `@iarna/rtf-to-html` **(validated)**
+   - **Tested against real .scriv project:** 14/14 RTF files converted, zero errors. Curly quotes, em dashes, bold, font changes all preserved. Tables flattened to paragraphs (acceptable — decorative layout, not content). See rtf-test/ for test harness.
+   - **Known limitations:** Embedded images in RTF not extracted (Phase 1 iteration). Footnotes/annotations may not map cleanly.
 3. Rebuild tree in Scriptorium's data model
-4. Import snapshots if present
+4. Import snapshots if present (Phase 1 — not all .scriv projects have them)
 5. Map Scrivener labels/status to Scriptorium equivalents
-6. Preserve UUIDs as import metadata (for re-import/comparison)
+6. Preserve Scrivener binder IDs as import metadata (for re-import/comparison)
+7. **Import validation report:** Display counts (docs imported, folders created, files skipped, conversion errors) so user can trust the result
 
-**Library:** `@iarna/rtf-to-html` or `rtf.js` for RTF conversion. Evaluate against real .scriv files from Kyla's library before committing.
+**Library:** `@iarna/rtf-to-html` (confirmed). XML parsing via `fast-xml-parser`.
 
 ---
 
@@ -526,13 +551,19 @@ MyNovel.scriv/
 
 ## Phase Plan
 
-### Phase 1: The Writing Room 🖋️
-*Goal: Kyla can write in it locally*
+### MVP: The Local Scriptorium 📜
+*Goal: Ingest .scriv files, browse and edit locally, search everything*
 
-- [ ] Project scaffolding (SvelteKit + Express API)
-- [ ] SQLite schema for novels, folders, documents, snapshots
-- [ ] FTS5 search index
-- [ ] File-based content storage
+No auth, no sync, no offline cache — single-process SvelteKit on `localhost:5173`.
+
+**Core:**
+- [ ] Project scaffolding (SvelteKit with `+server.js` API endpoints, adapter-node)
+- [ ] SQLite schema for novels, folders, documents, snapshots (DB via `hooks.server.js` + `event.locals`)
+- [ ] FTS5 search index (content mirrored from files into SQLite for search)
+- [ ] File-based content storage with atomic writes (tmp → rename → SQLite transaction)
+- [ ] `DATA_ROOT` env variable for configurable data directory
+- [ ] .scriv import (parse .scrivx via fast-xml-parser, RTF → HTML via @iarna/rtf-to-html, rebuild tree)
+- [ ] Import validation report (docs imported, folders created, skipped files, errors)
 - [ ] TipTap editor with basic rich text (verify svelte-tiptap maturity; fallback: thin custom wrapper)
 - [ ] Sidebar binder tree with drag-and-drop
 - [ ] Auto-save with snapshot creation
@@ -541,16 +572,26 @@ MyNovel.scriv/
 - [ ] Basic full-text search
 - [ ] Basic responsive layout (works on phone)
 
-### Phase 2: The Lock and Key 🔐
-*Goal: Two users, protected access, import*
+**Stretch:**
+- [ ] Basic compile/export — concatenate manuscript documents in binder order, export via Pandoc as docx (enough to hand someone a readable manuscript)
 
-- [ ] User auth (login/logout/sessions)
+### Phase 1: The Writing Room 🖋️
+*Goal: Full local writing experience beyond MVP*
+
+- [ ] Everything from MVP, plus:
+- [ ] Snapshot browser with timeline ("Show me Tuesday's version")
+- [ ] Import Scrivener snapshots (if present in .scriv)
+- [ ] Richer .scriv import (iterate on RTF edge cases: footnotes, annotations, embedded images)
+- [ ] Full compile/export with per-document include/exclude toggle and saved configurations
+
+### Phase 2: The Lock and Key 🔐
+*Goal: Two users, protected access*
+
+- [ ] User auth (login/logout/sessions via SvelteKit hooks — re-evaluate Express if auth complexity demands it)
 - [ ] Writer vs Archivist roles
 - [ ] Archivist admin panel
 - [ ] Trash management (restore/purge)
-- [ ] Snapshot browser with timeline
 - [ ] Audit log
-- [ ] .scriv import tool (basic: text + structure; iterate on rich RTF features)
 - [ ] Storage monitoring dashboard
 
 ### Phase 3: The Scriptorium Opens 🌐
@@ -596,17 +637,19 @@ MyNovel.scriv/
 
 ## Decisions Made
 
-1. **SvelteKit** — compiles away, minimal bundle for old devices, good service worker story
+1. **SvelteKit (single-process, no Express for MVP)** — `+server.js` endpoints handle the API. Single process, no CORS, adapter-node for deployment. Express deferred unless auth/sync complexity demands it in Phase 2+. Both Codex and Gemini independently recommended this.
 2. **TipTap (ProseMirror)** — robust, well-maintained, Svelte-compatible, clean HTML output, extensible schema. Custom plugins for character annotations etc. in Phase 4. Note: svelte-tiptap is community-maintained; verify maturity early.
-3. **SQLite via better-sqlite3** — metadata, tree, versions, links, FTS5 search
-4. **Express.js** — simpler session/auth middleware; Fastify unnecessary at this scale
-5. **sharp** — image proxy generation (verify ARM/Pi builds)
-6. **Server is source of truth** — clients cache working set locally for offline/lag-free writing, sync diffs when connected. Full offline support for rural Maine conditions.
-7. **PWA, not native app** — cross-platform, works on any browser
-8. **Same app, role-gated** — Archivist sections visible only to admin role
-9. **Search from Phase 1** — SQLite FTS5 is essentially free; search is a core writing need
-10. **.scriv import in Phase 2** — RTF edge cases shouldn't block core writing loop
-11. **Worlds deferred to Phase 4** — novels exist at library root in Phases 1-3
+3. **SQLite via better-sqlite3** — metadata, tree, versions, links, FTS5 search. DB initialized in `hooks.server.js`.
+4. **File is source of truth for content** — HTML files on disk, SQLite for metadata. FTS5 mirrors content for search. Atomic writes via temp-file → rename → SQLite transaction.
+5. **UUID directories, not slugs** — `/data/{novel-uuid}/docs/` avoids moving directory trees on novel rename. Slugs stay in metadata for display.
+6. **@iarna/rtf-to-html** — RTF conversion for .scriv import (validated: 14/14 files, zero errors). `fast-xml-parser` for .scrivx binder tree.
+7. **sharp** — image proxy generation, Phase 4+ (verify ARM/Pi builds)
+8. **Server is source of truth** — clients cache working set locally for offline/lag-free writing, sync diffs when connected. Full offline support for rural Maine conditions.
+9. **PWA, not native app** — cross-platform, works on any browser
+10. **Same app, role-gated** — Archivist sections visible only to admin role
+11. **Search from MVP** — SQLite FTS5 is essentially free; search is a core writing need for a large document library
+12. **.scriv import in MVP** — this is the primary ingest path; basic import (text + structure) is MVP, rich RTF features iterate in Phase 1
+13. **Worlds deferred to Phase 4** — novels exist at library root in Phases 1-3
 
 ## Open Questions
 
@@ -654,9 +697,24 @@ MyNovel.scriv/
   - Documented full set of sync operation types (was only showing 4 of 8 in examples)
   - Clarified compile_include vs compile API include_ids relationship
   - Noted Worlds are Phase 4; novels at library root in Phases 1-3
+- **v0.4** — Revised after Codex + Gemini review. Changes:
+  - **SvelteKit-only for MVP** — dropped Express; `+server.js` endpoints, single process, no CORS. Both reviewers independently recommended this. Express deferred to Phase 2+ if auth complexity demands it.
+  - **File is source of truth for content** — resolved ambiguity about where content lives. Files on disk are canonical; SQLite stores metadata only; FTS5 mirrors content for search. (Codex)
+  - **Atomic write strategy** — temp file → fsync → rename → SQLite transaction. Startup consistency check reconciles orphaned files. (Both)
+  - **UUID directories, not slugs** — `/data/{novel-uuid}/` avoids moving directory trees on novel rename. (Codex)
+  - **Cyclic move detection** — server validates new_parent isn't a descendant of moved node, preventing the "Ouroboros" cycle bug. (Gemini)
+  - **Move-of-deleted-child** — defined: delete wins, client notified. (Codex)
+  - **Sync batch processing order** — creates → updates → moves → deletes, with per-operation error propagation. (Codex)
+  - **old_parent_id in tree_move payload** — enables deterministic rollback on rejected moves. (Codex)
+  - **Clock skew note** — acceptable for two-user system; fall back to server-receive ordering if needed. (Codex)
+  - **Client-side coalescing** — multiple offline updates to same entity coalesced before sync. (Codex)
+  - **sort_order feedback** — server returns adjusted values to client after collision resolution or renormalization. (Both)
+  - **.scriv import fixed to MVP** — resolved contradiction (was "Phase 2" in one place, MVP in another). RTF library confirmed as `@iarna/rtf-to-html` (validated). (Codex)
+  - **Import validation report** added to MVP checklist. (Codex)
+  - **DATA_ROOT env variable** added for configurable data directory. (Gemini)
 
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.3
+— Scriptorium design document, v0.4
