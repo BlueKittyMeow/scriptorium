@@ -183,20 +183,14 @@
 				.scrollIntoView()
 				.run();
 
-			// Start fade after 3s
-			setTimeout(() => {
-				const el = element?.querySelector('.search-highlight');
-				el?.classList.add('fading');
-			}, 3000);
-
-			// Remove decoration after 5s
+			// Remove decoration after animation completes (6s animation + buffer)
 			setTimeout(() => {
 				if (editor) {
 					editor.view.dispatch(
 						editor.state.tr.setMeta(highlightKey, DecorationSet.empty)
 					);
 				}
-			}, 5000);
+			}, 7000);
 		}
 
 		onSearchHighlightDone?.();
@@ -415,17 +409,15 @@
 		height: 0;
 	}
 
-	/* Search highlight */
+	/* Search highlight — CSS animation so ProseMirror can't interfere */
 	:global(.search-highlight) {
-		background: #ffe066;
-		padding: 1px 2px;
 		border-radius: 2px;
-		transition: background 2s ease-out, opacity 2s ease-out;
+		animation: search-fade 6s ease-out forwards;
 	}
 
-	:global(.search-highlight.fading) {
-		background: transparent;
-		opacity: 0;
+	@keyframes search-fade {
+		0%, 50% { background: #ffe066; }
+		100% { background: transparent; }
 	}
 
 	.editor-footer {
