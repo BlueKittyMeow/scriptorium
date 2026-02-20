@@ -29,7 +29,11 @@
 	let saveStatus: 'saved' | 'saving' | 'unsaved' = $state('saved');
 	let saveTimeout: any = null;
 	let currentDocId = $state('');
-	let spellcheck = $state(true);
+	let spellcheck = $state(
+		typeof localStorage !== 'undefined'
+			? localStorage.getItem('scriptorium-spellcheck') !== 'false'
+			: true
+	);
 
 	// ProseMirror decoration plugin for search highlights
 	const highlightKey = new PluginKey('searchHighlight');
@@ -211,6 +215,7 @@
 
 	function toggleSpellcheck() {
 		spellcheck = !spellcheck;
+		localStorage.setItem('scriptorium-spellcheck', String(spellcheck));
 		if (editor) {
 			editor.setOptions({
 				editorProps: {
@@ -286,15 +291,15 @@
 	}
 
 	.editor-header {
-		border-bottom: 1px solid #e8e0d8;
-		background: white;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-surface);
 	}
 
 	.doc-title {
 		font-size: 1.3rem;
 		font-weight: 600;
 		padding: 0.75rem 1.5rem 0;
-		color: #3a2e26;
+		color: var(--text-heading);
 	}
 
 	.editor-toolbar {
@@ -311,25 +316,25 @@
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--text-faint);
 		min-width: 28px;
 		text-align: center;
 	}
 
 	.tb-btn:hover {
-		background: #f5f0eb;
-		border-color: #d4c8bc;
+		background: var(--bg-elevated);
+		border-color: var(--border-input);
 	}
 
 	.tb-btn.active {
-		background: #e8e0d8;
-		border-color: #c8b8a8;
-		color: #3a2e26;
+		background: var(--bg-active);
+		border-color: var(--border-active);
+		color: var(--text-heading);
 	}
 
 	.tb-sep {
 		width: 1px;
-		background: #e8e0d8;
+		background: var(--border);
 		margin: 0 0.25rem;
 		align-self: stretch;
 	}
@@ -337,7 +342,7 @@
 	.editor-scroll {
 		flex: 1;
 		overflow-y: auto;
-		background: white;
+		background: var(--bg-surface);
 	}
 
 	.editor-content {
@@ -353,7 +358,7 @@
 		font-family: Georgia, 'Times New Roman', serif;
 		font-size: 1.05rem;
 		line-height: 1.75;
-		color: #2c2c2c;
+		color: var(--text);
 	}
 
 	:global(.editor-content .tiptap p) {
@@ -364,28 +369,28 @@
 		font-size: 1.75rem;
 		font-weight: 600;
 		margin: 1.5rem 0 0.75rem;
-		color: #3a2e26;
+		color: var(--text-heading);
 	}
 
 	:global(.editor-content .tiptap h2) {
 		font-size: 1.4rem;
 		font-weight: 600;
 		margin: 1.25rem 0 0.5rem;
-		color: #3a2e26;
+		color: var(--text-heading);
 	}
 
 	:global(.editor-content .tiptap h3) {
 		font-size: 1.15rem;
 		font-weight: 600;
 		margin: 1rem 0 0.5rem;
-		color: #3a2e26;
+		color: var(--text-heading);
 	}
 
 	:global(.editor-content .tiptap blockquote) {
-		border-left: 3px solid #d4c8bc;
+		border-left: 3px solid var(--border-input);
 		padding-left: 1rem;
 		margin: 0.75rem 0;
-		color: #666;
+		color: var(--text-faint);
 		font-style: italic;
 	}
 
@@ -400,14 +405,14 @@
 	}
 
 	:global(.editor-content .tiptap code) {
-		background: #f5f0eb;
+		background: var(--bg-elevated);
 		padding: 0.1rem 0.3rem;
 		border-radius: 3px;
 		font-size: 0.9em;
 	}
 
 	:global(.editor-content .tiptap pre) {
-		background: #f5f0eb;
+		background: var(--bg-elevated);
 		padding: 0.75rem 1rem;
 		border-radius: 6px;
 		margin: 0.75rem 0;
@@ -416,7 +421,7 @@
 
 	:global(.editor-content .tiptap p.is-editor-empty:first-child::before) {
 		content: attr(data-placeholder);
-		color: #c8b8a8;
+		color: var(--text-placeholder);
 		pointer-events: none;
 		float: left;
 		height: 0;
@@ -429,7 +434,7 @@
 	}
 
 	@keyframes search-fade {
-		0%, 50% { background: #ffe066; }
+		0%, 50% { background: var(--search-highlight); }
 		100% { background: transparent; }
 	}
 
@@ -438,10 +443,10 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 0.4rem 1.5rem;
-		background: #f5f0eb;
-		border-top: 1px solid #e8e0d8;
+		background: var(--bg-elevated);
+		border-top: 1px solid var(--border);
 		font-size: 0.8rem;
-		color: #8a7a6a;
+		color: var(--text-secondary);
 	}
 
 	.footer-right {
@@ -452,12 +457,12 @@
 
 	.spellcheck-indicator {
 		font-size: 0.75rem;
-		color: #a89a8a;
+		color: var(--text-muted);
 	}
 
-	.save-status.saved { color: #6a9a5a; }
-	.save-status.saving { color: #b8a040; }
-	.save-status.unsaved { color: #c87a50; }
+	.save-status.saved { color: var(--saved); }
+	.save-status.saving { color: var(--saving); }
+	.save-status.unsaved { color: var(--unsaved); }
 
 	@media (max-width: 768px) {
 		.doc-title {

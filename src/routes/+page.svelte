@@ -219,11 +219,11 @@
 	.library-header h1 {
 		font-size: 2rem;
 		font-weight: 600;
-		color: #3a2e26;
+		color: var(--text-heading);
 	}
 
 	.subtitle {
-		color: #8a7a6a;
+		color: var(--text-secondary);
 		font-style: italic;
 		margin-top: 0.25rem;
 	}
@@ -244,13 +244,13 @@
 	}
 
 	.btn-primary {
-		background: #5c4a3a;
-		color: white;
-		border-color: #5c4a3a;
+		background: var(--accent);
+		color: var(--text-on-accent);
+		border-color: var(--accent);
 	}
 
 	.btn-primary:hover {
-		background: #4a3a2c;
+		background: var(--accent-hover);
 	}
 
 	.btn-primary:disabled {
@@ -259,19 +259,19 @@
 	}
 
 	.btn-secondary {
-		background: white;
-		color: #5c4a3a;
-		border-color: #d4c8bc;
+		background: var(--bg-surface);
+		color: var(--accent);
+		border-color: var(--border-input);
 	}
 
 	.btn-secondary:hover {
-		background: #f5f0eb;
+		background: var(--bg-elevated);
 	}
 
 	.empty-state {
 		text-align: center;
 		padding: 4rem 2rem;
-		color: #8a7a6a;
+		color: var(--text-secondary);
 	}
 
 	.hint {
@@ -286,8 +286,8 @@
 	}
 
 	.novel-card {
-		background: white;
-		border: 1px solid #e8e0d8;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 8px;
 		padding: 1.25rem;
 		text-decoration: none;
@@ -296,8 +296,8 @@
 	}
 
 	.novel-card:hover {
-		border-color: #c8b8a8;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+		border-color: var(--border-active);
+		box-shadow: 0 2px 8px var(--shadow-sm);
 	}
 
 	.novel-card-header {
@@ -318,7 +318,7 @@
 		border: none;
 		cursor: pointer;
 		font-size: 0.85rem;
-		color: #a89a8a;
+		color: var(--text-muted);
 		padding: 0.1rem 0.25rem;
 		opacity: 0;
 		transition: opacity 0.15s;
@@ -329,16 +329,18 @@
 	}
 
 	.rename-btn:hover {
-		color: #5c4a3a;
+		color: var(--accent);
 	}
 
 	.novel-rename-input {
 		font-size: 1.1rem;
 		font-weight: 600;
-		border: 1px solid #5c4a3a;
+		border: 1px solid var(--accent);
 		border-radius: 4px;
 		padding: 0.15rem 0.4rem;
 		width: 100%;
+		background: var(--bg-surface);
+		color: var(--text);
 	}
 
 	.novel-rename-input:focus {
@@ -347,7 +349,7 @@
 
 	.novel-subtitle {
 		font-size: 0.85rem;
-		color: #8a7a6a;
+		color: var(--text-secondary);
 		margin-bottom: 0.5rem;
 	}
 
@@ -356,13 +358,13 @@
 		gap: 0.75rem;
 		margin-top: 0.75rem;
 		font-size: 0.8rem;
-		color: #a89a8a;
+		color: var(--text-muted);
 	}
 
 	.status {
 		text-transform: capitalize;
 		padding: 0.1rem 0.5rem;
-		background: #f5f0eb;
+		background: var(--bg-elevated);
 		border-radius: 3px;
 	}
 
@@ -373,7 +375,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: rgba(0,0,0,0.4);
+		background: var(--bg-overlay);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -381,36 +383,39 @@
 	}
 
 	.modal {
-		background: white;
+		background: var(--bg-surface);
 		border-radius: 12px;
 		padding: 2rem;
 		max-width: 500px;
 		width: 90%;
-		box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+		box-shadow: 0 8px 32px var(--shadow-lg);
 	}
 
 	.modal h2 {
 		margin-bottom: 0.75rem;
+		color: var(--text-heading);
 	}
 
 	.modal p {
 		margin-bottom: 0.75rem;
-		color: #666;
+		color: var(--text-faint);
 		font-size: 0.9rem;
 	}
 
 	.modal input {
 		width: 100%;
 		padding: 0.6rem 0.75rem;
-		border: 1px solid #d4c8bc;
+		border: 1px solid var(--border-input);
 		border-radius: 6px;
 		font-size: 0.9rem;
 		margin-bottom: 1rem;
+		background: var(--bg-surface);
+		color: var(--text);
 	}
 
 	.modal input:focus {
 		outline: none;
-		border-color: #5c4a3a;
+		border-color: var(--accent);
 	}
 
 	.modal-actions {
@@ -422,13 +427,13 @@
 	.import-report {
 		margin-top: 1rem;
 		padding: 1rem;
-		background: #f5f0eb;
+		background: var(--bg-elevated);
 		border-radius: 6px;
 		font-size: 0.85rem;
 	}
 
 	.import-report.error {
-		background: #fef2f2;
+		background: var(--error-bg);
 	}
 
 	.import-report ul {
@@ -436,7 +441,7 @@
 	}
 
 	.report-error {
-		color: #c44;
+		color: var(--error-text);
 	}
 
 	.import-report details {
