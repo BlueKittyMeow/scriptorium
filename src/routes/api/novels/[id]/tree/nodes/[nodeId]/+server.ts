@@ -53,6 +53,12 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		return json({ success: true });
 	}
 
+	// Toggle compile_include
+	if (body.compile_include !== undefined && nodeType === 'document') {
+		locals.db.prepare('UPDATE documents SET compile_include = ?, updated_at = ? WHERE id = ? AND novel_id = ?')
+			.run(body.compile_include ? 1 : 0, now, params.nodeId, params.id);
+	}
+
 	// Rename
 	if (body.title) {
 		if (nodeType === 'folder') {

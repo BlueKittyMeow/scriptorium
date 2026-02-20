@@ -6,6 +6,7 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import SnapshotPanel from '$lib/components/SnapshotPanel.svelte';
 	import SnapshotPreview from '$lib/components/SnapshotPreview.svelte';
+	import CompileDialog from '$lib/components/CompileDialog.svelte';
 
 	let { data } = $props();
 
@@ -34,6 +35,9 @@
 	let showRestoreConfirm: string | null = $state(null);
 	let editorFlush: (() => Promise<void>) | null = $state(null);
 	let editorContentVersion = $state(0);
+
+	// Compile dialog state
+	let showCompileDialog = $state(false);
 
 	// Novel rename state
 	let editingNovelTitle = $state(false);
@@ -500,6 +504,7 @@
 					<button class="btn-sm" onclick={() => openNewModal('document')}>+ Doc</button>
 					<button class="btn-sm" onclick={() => openNewModal('folder')}>+ Folder</button>
 					<button class="btn-sm" onclick={() => { showSearch = !showSearch; }}>Search</button>
+					<button class="btn-sm" onclick={() => showCompileDialog = true}>Compile</button>
 				</div>
 
 				<!-- Search panel -->
@@ -646,6 +651,15 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Compile dialog -->
+<CompileDialog
+	{novelId}
+	novelTitle={data.novel.title}
+	{tree}
+	bind:open={showCompileDialog}
+	onClose={() => showCompileDialog = false}
+/>
 
 {#snippet treeNode(node: TreeNode, depth: number)}
 	{#if !node.deleted_at}

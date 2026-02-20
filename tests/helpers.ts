@@ -62,7 +62,18 @@ CREATE INDEX IF NOT EXISTS idx_folders_novel ON folders(novel_id);
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_novel ON documents(novel_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parent_id);
+CREATE TABLE IF NOT EXISTS compile_configs (
+  id TEXT PRIMARY KEY,
+  novel_id TEXT NOT NULL REFERENCES novels(id),
+  name TEXT NOT NULL,
+  format TEXT NOT NULL DEFAULT 'docx',
+  include_ids TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_document ON snapshots(document_id);
+CREATE INDEX IF NOT EXISTS idx_compile_configs_novel ON compile_configs(novel_id);
 `;
 
 /** Create a fresh in-memory database with full schema */

@@ -75,3 +75,15 @@ export interface ImportReport {
 	errors: string[];
 	warnings: string[];
 }
+
+export type CompileFormat = 'docx' | 'epub' | 'pdf' | 'markdown';
+
+export interface CompileConfig {
+	id: string;
+	novel_id: string;
+	name: string;
+	format: CompileFormat;
+	include_ids: string[] | null;
+	created_at: string;
+	updated_at: string;
+}
