@@ -252,19 +252,19 @@
 	}
 
 	.panel-close {
-		background: none;
-		border: none;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
 		cursor: pointer;
-		font-size: 1.2rem;
+		font-size: 1.1rem;
 		line-height: 1;
-		color: var(--text-muted);
-		padding: 0.2rem 0.4rem;
+		color: var(--text);
+		padding: 0.15rem 0.45rem;
 		border-radius: 4px;
 	}
 
 	.panel-close:hover {
 		color: var(--accent);
-		background: var(--bg-elevated);
+		border-color: var(--accent);
 	}
 
 	@media (max-width: 768px) {
