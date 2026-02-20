@@ -34,6 +34,7 @@
 	let scrollContainer: HTMLDivElement;
 	let editor: Editor | null = $state(null);
 	let wordCount = $state(0);
+	let selectionWordCount = $state(0);
 	let saveStatus: 'saved' | 'saving' | 'unsaved' = $state('saved');
 	let saveTimeout: any = null;
 	let currentDocId = $state('');
@@ -74,6 +75,12 @@
 	function updateWordCount() {
 		if (editor) {
 			wordCount = countWords(editor.getText());
+			const { from, to } = editor.state.selection;
+			if (from !== to) {
+				selectionWordCount = countWords(editor.state.doc.textBetween(from, to, ' '));
+			} else {
+				selectionWordCount = 0;
+			}
 		}
 	}
 
@@ -136,6 +143,7 @@
 			},
 			onTransaction: () => {
 				editor = editor;
+				updateWordCount();
 			}
 		});
 		updateWordCount();
@@ -313,7 +321,7 @@
 	</div>
 
 	<div class="editor-footer">
-		<span class="word-count">{wordCount.toLocaleString()} words</span>
+		<span class="word-count">{#if selectionWordCount > 0}{selectionWordCount.toLocaleString()} / {/if}{wordCount.toLocaleString()} words</span>
 		<span class="footer-right">
 			{#if onManualSnapshot}
 				<button class="footer-btn" onclick={handleManualSnapshot} disabled={saveStatus === 'saving'} title="Create manual snapshot">

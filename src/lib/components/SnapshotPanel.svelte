@@ -71,7 +71,7 @@
 <div class="snapshot-panel">
 	<div class="panel-header">
 		<h3>Snapshots</h3>
-		<button class="btn-tiny" onclick={onClose} title="Close">×</button>
+		<button class="panel-close" onclick={onClose} title="Close" aria-label="Close snapshots">×</button>
 	</div>
 
 	<div class="panel-content">
@@ -251,17 +251,20 @@
 		background: var(--bg-elevated);
 	}
 
-	.btn-tiny {
+	.panel-close {
 		background: none;
 		border: none;
 		cursor: pointer;
-		font-size: 0.9rem;
+		font-size: 1.2rem;
+		line-height: 1;
 		color: var(--text-muted);
-		padding: 0 0.2rem;
+		padding: 0.2rem 0.4rem;
+		border-radius: 4px;
 	}
 
-	.btn-tiny:hover {
+	.panel-close:hover {
 		color: var(--accent);
+		background: var(--bg-elevated);
 	}
 
 	@media (max-width: 768px) {
