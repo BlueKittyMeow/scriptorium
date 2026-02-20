@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getDataRoot } from './db.js';
+import { validatePathSegment } from './validate.js';
 
 /** Strip HTML tags, return plain text (for FTS indexing and word count) */
 export function stripHtml(html: string): string {
@@ -16,6 +17,7 @@ export function countWords(text: string): number {
 
 /** Ensure novel directories exist */
 export function ensureNovelDirs(novelId: string): void {
+	validatePathSegment(novelId);
 	const root = getDataRoot();
 	fs.mkdirSync(path.join(root, novelId, 'docs'), { recursive: true });
 	fs.mkdirSync(path.join(root, novelId, 'snapshots'), { recursive: true });
@@ -23,17 +25,22 @@ export function ensureNovelDirs(novelId: string): void {
 
 /** Get path to a document's content file */
 export function contentPath(novelId: string, docId: string): string {
+	validatePathSegment(novelId);
+	validatePathSegment(docId);
 	return path.join(getDataRoot(), novelId, 'docs', `${docId}.html`);
 }
 
 /** Get path to a snapshot file */
 export function snapshotPath(novelId: string, docId: string, timestamp: string): string {
+	validatePathSegment(novelId);
+	validatePathSegment(docId);
+	validatePathSegment(timestamp);
 	const dir = path.join(getDataRoot(), novelId, 'snapshots', docId);
 	fs.mkdirSync(dir, { recursive: true });
 	return path.join(dir, `${timestamp}.html`);
 }
 
-/** Atomic write: write to .tmp, fsync, rename */
+/** Atomic write: write to .tmp, fsync, rename, fsync parent dir */
 export function writeFileAtomic(filePath: string, content: string): void {
 	const tmpPath = filePath + '.tmp';
 	const fd = fs.openSync(tmpPath, 'w');
@@ -44,6 +51,13 @@ export function writeFileAtomic(filePath: string, content: string): void {
 		fs.closeSync(fd);
 	}
 	fs.renameSync(tmpPath, filePath);
+	// Fsync parent directory to ensure the rename is durable after a crash
+	const dirFd = fs.openSync(path.dirname(filePath), 'r');
+	try {
+		fs.fsyncSync(dirFd);
+	} finally {
+		fs.closeSync(dirFd);
+	}
 }
 
 /** Write document content to disk atomically */

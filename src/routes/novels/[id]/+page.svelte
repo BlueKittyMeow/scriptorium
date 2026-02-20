@@ -425,7 +425,7 @@
 							<div class="trash-header">Trash ({trashedItems.length})</div>
 							{#each trashedItems as item}
 								<div class="tree-item trashed" style="padding-left: 1rem">
-									<span class="node-icon">{item.type === 'folder' ? '📁' : '📄'}</span>
+									<span class="node-icon {item.type === 'folder' ? 'icon-folder' : 'icon-doc'}" aria-hidden="true"></span>
 									<span class="node-title">{item.title}</span>
 									<button class="btn-tiny" onclick={() => restoreItem(item.id, item.type)} title="Restore">↩</button>
 								</div>
@@ -461,7 +461,7 @@
 <!-- New item modal -->
 {#if showNewModal}
 	<div class="modal-backdrop" onclick={() => showNewModal = false} role="presentation">
-		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showNewModal = false)} role="dialog" tabindex="-1">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showNewModal = false)} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>New {newItemType === 'folder' ? 'Folder' : 'Document'}</h2>
 			<input
 				type="text"
@@ -500,14 +500,14 @@
 				<button class="folder-toggle" onclick={() => toggleFolder(node.id)}>
 					{expandedFolders.has(node.id) ? '▼' : '▶'}
 				</button>
-				<span class="node-icon">📁</span>
+				<span class="node-icon icon-folder" aria-hidden="true"></span>
 				<span class="node-title folder-title">{node.title}</span>
 				<span class="node-actions">
 					<button class="btn-tiny" onclick={() => openNewModal('document', node.id)} title="New document">+</button>
 					<button class="btn-tiny" onclick={() => trashItem(node.id, 'folder')} title="Move to trash">×</button>
 				</span>
 			{:else}
-				<span class="node-icon">📄</span>
+				<span class="node-icon icon-doc" aria-hidden="true"></span>
 				<button class="node-title doc-title" onclick={() => selectDocument(node.id)}>
 					{node.title}
 				</button>
@@ -762,6 +762,29 @@
 	.node-icon {
 		font-size: 0.8rem;
 		flex-shrink: 0;
+		width: 1rem;
+		text-align: center;
+		color: var(--text-muted);
+	}
+
+	.icon-folder::before {
+		content: '';
+		display: inline-block;
+		width: 0.8rem;
+		height: 0.6rem;
+		background: var(--accent);
+		clip-path: polygon(0 20%, 40% 20%, 50% 0, 100% 0, 100% 100%, 0 100%);
+		opacity: 0.6;
+	}
+
+	.icon-doc::before {
+		content: '';
+		display: inline-block;
+		width: 0.55rem;
+		height: 0.7rem;
+		background: var(--text-faint);
+		clip-path: polygon(0 0, 65% 0, 100% 30%, 100% 100%, 0 100%);
+		opacity: 0.5;
 	}
 
 	.node-title {

@@ -27,4 +27,16 @@ describe('editor save reliability', () => {
 		// to ensure the save completes even during page unload
 		expect(source).toContain('keepalive');
 	});
+
+	it('onDestroy should also save when status is "saving" (in-flight) (#5)', async () => {
+		const fs = await import('fs');
+		const source = fs.readFileSync('src/lib/components/Editor.svelte', 'utf-8');
+
+		// Extract the onDestroy callback
+		const onDestroyBlock = source.match(/onDestroy\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] || '';
+
+		// The condition should cover both 'saving' and 'unsaved' states — i.e. !== 'saved'
+		// Current bug: only checks saveStatus === 'unsaved', missing in-flight saves
+		expect(onDestroyBlock).toContain("!== 'saved'");
+	});
 });

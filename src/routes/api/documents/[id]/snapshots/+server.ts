@@ -5,7 +5,7 @@ import { readContentFile, writeSnapshotFile, countWords, stripHtml } from '$lib/
 
 // GET /api/documents/:id/snapshots — list snapshots
 export const GET: RequestHandler = async ({ params, locals }) => {
-	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.id);
+	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!doc) throw error(404, 'Document not found');
 
 	const snapshots = locals.db.prepare(
@@ -17,7 +17,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 // POST /api/documents/:id/snapshots — manual snapshot
 export const POST: RequestHandler = async ({ params, locals }) => {
-	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.id) as any;
+	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
 	const content = readContentFile(doc.novel_id, doc.id) || '';

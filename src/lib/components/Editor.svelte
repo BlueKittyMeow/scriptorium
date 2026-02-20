@@ -117,7 +117,7 @@
 
 	onDestroy(() => {
 		clearTimeout(saveTimeout);
-		if (editor && saveStatus === 'unsaved' && currentDocId) {
+		if (editor && saveStatus !== 'saved' && currentDocId) {
 			// Use keepalive to ensure the save completes even during page unload
 			fetch(`/api/documents/${currentDocId}`, {
 				method: 'PUT',
@@ -215,7 +215,7 @@
 
 	function toggleSpellcheck() {
 		spellcheck = !spellcheck;
-		localStorage.setItem('scriptorium-spellcheck', String(spellcheck));
+		try { localStorage.setItem('scriptorium-spellcheck', String(spellcheck)); } catch { /* quota exceeded */ }
 		if (editor) {
 			editor.setOptions({
 				editorProps: {

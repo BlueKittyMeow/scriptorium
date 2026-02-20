@@ -134,7 +134,7 @@
 <!-- Import Modal -->
 {#if showImportModal}
 	<div class="modal-backdrop" onclick={() => { if (!importing) showImportModal = false; }} role="presentation">
-		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && !importing && (showImportModal = false)} role="dialog" tabindex="-1">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && !importing && (showImportModal = false)} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>Import Scrivener Project</h2>
 			<p>Enter the full path to your .scriv directory:</p>
 			<input
@@ -189,7 +189,7 @@
 <!-- New Novel Modal -->
 {#if showNewNovelModal}
 	<div class="modal-backdrop" onclick={() => showNewNovelModal = false} role="presentation">
-		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showNewNovelModal = false)} role="dialog" tabindex="-1">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showNewNovelModal = false)} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>New Novel</h2>
 			<input
 				type="text"

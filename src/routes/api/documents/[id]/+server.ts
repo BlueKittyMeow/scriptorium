@@ -5,7 +5,7 @@ import { readContentFile, writeContentFile, writeSnapshotFile, stripHtml, countW
 
 // GET /api/documents/:id — metadata + content
 export const GET: RequestHandler = async ({ params, locals }) => {
-	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.id) as any;
+	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
 	const content = readContentFile(doc.novel_id, doc.id) || '';
@@ -17,7 +17,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
 	const now = new Date().toISOString();
 
-	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.id) as any;
+	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
 	const html = body.content ?? '';
@@ -39,9 +39,11 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 			WHERE id = ?
 		`).run(wordCount, body.title, body.synopsis, now, params.id);
 
-		// Snapshot if >2 min since last
-		const shouldSnapshot = !doc.last_snapshot_at ||
-			(new Date(now).getTime() - new Date(doc.last_snapshot_at).getTime()) > 2 * 60 * 1000;
+		// Snapshot if >2 min since last — re-read inside transaction to prevent duplicates
+		const fresh = locals.db.prepare('SELECT last_snapshot_at FROM documents WHERE id = ?').get(params.id) as any;
+		const lastSnap = fresh?.last_snapshot_at;
+		const shouldSnapshot = !lastSnap ||
+			(new Date(now).getTime() - new Date(lastSnap).getTime()) > 2 * 60 * 1000;
 
 		if (shouldSnapshot && html.trim()) {
 			const snapId = uuid();
@@ -65,6 +67,6 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	});
 	updateDoc();
 
-	const updated = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.id);
+	const updated = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	return json(updated);
 };

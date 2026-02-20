@@ -14,18 +14,23 @@ export function getDataRoot(): string {
 export function getDb(): Database.Database {
 	if (_db) return _db;
 
-	fs.mkdirSync(DATA_ROOT, { recursive: true });
+	try {
+		fs.mkdirSync(DATA_ROOT, { recursive: true });
 
-	const dbPath = path.join(DATA_ROOT, 'scriptorium.db');
-	_db = new Database(dbPath);
+		const dbPath = path.join(DATA_ROOT, 'scriptorium.db');
+		_db = new Database(dbPath);
 
-	// Enable WAL mode for concurrent reads during writes
-	_db.pragma('journal_mode = WAL');
-	_db.pragma('foreign_keys = ON');
-	_db.pragma('busy_timeout = 5000');
+		// Enable WAL mode for concurrent reads during writes
+		_db.pragma('journal_mode = WAL');
+		_db.pragma('foreign_keys = ON');
+		_db.pragma('busy_timeout = 5000');
 
-	// Run schema
-	_db.exec(SCHEMA);
+		// Run schema
+		_db.exec(SCHEMA);
+	} catch (err) {
+		_db = null;
+		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
+	}
 
 	return _db;
 }

@@ -31,7 +31,7 @@
 	function cycleTheme() {
 		const order = ['system', 'light', 'dark'];
 		theme = order[(order.indexOf(theme) + 1) % order.length];
-		localStorage.setItem('scriptorium-theme', theme);
+		try { localStorage.setItem('scriptorium-theme', theme); } catch { /* quota exceeded */ }
 		if (theme === 'system') {
 			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 			document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
@@ -46,7 +46,7 @@
 </div>
 
 {#if mounted}
-	<button class="theme-toggle" onclick={cycleTheme} title={themeTitle}>
+	<button class="theme-toggle" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
 		{themeIcon}
 	</button>
 {/if}

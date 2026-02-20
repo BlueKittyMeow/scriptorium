@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import type { ImportReport } from '$lib/types.js';
 import { writeContentFile, stripHtml, countWords } from '$lib/server/files.js';
 import { ensureNovelDirs } from '$lib/server/files.js';
+import { validatePathSegment } from '$lib/server/validate.js';
 
 function convertRtf(rtfBuffer: Buffer): Promise<string> {
 	return new Promise((resolve, reject) => {
@@ -157,6 +158,7 @@ async function walkBinderItem(
 	sortOrder: number
 ): Promise<void> {
 	const scrivId = item['@_ID'];
+	validatePathSegment(scrivId);
 	const type = item['@_Type'];
 	const title = item.Title || '(untitled)';
 	const now = new Date().toISOString();
@@ -245,6 +247,9 @@ async function tryImportContent(
 	docsDir: string,
 	report: ImportReport
 ): Promise<boolean> {
+	// Validate scrivId to prevent path traversal from crafted .scrivx files
+	validatePathSegment(scrivId);
+
 	// Try different RTF locations
 	const rtfPaths = [
 		path.join(docsDir, `${scrivId}.rtf`),
