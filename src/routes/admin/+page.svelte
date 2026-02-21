@@ -189,8 +189,8 @@
 
 				<h3>Create User</h3>
 				<div class="create-form">
-					<input type="text" placeholder="Username" bind:value={newUsername} />
-					<input type="password" placeholder="Password (8+ chars)" bind:value={newPassword} />
+					<input type="text" placeholder="Username" bind:value={newUsername} autocomplete="off" />
+					<input type="password" placeholder="Password (8+ chars)" bind:value={newPassword} autocomplete="new-password" />
 					<select bind:value={newRole}>
 						<option value="writer">Writer</option>
 						<option value="archivist">Archivist</option>
