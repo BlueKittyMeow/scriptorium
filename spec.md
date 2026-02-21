@@ -230,7 +230,7 @@ Library: Kyla
 - **Data root:** Configurable via `DATA_ROOT` env variable (default: `./data`). Essential for local setup on any machine.
 - **Auth (Phase 2+):** bcrypt + SvelteKit hooks for session management
   - Stretch: passkeys/WebAuthn for passwordless
-- **Backup (Phase 3+):** rclone to Google Drive on cron (server-side only — Kyla never touches this)
+- **Backup (Phase 3+):** Per-user Google Drive backup via OAuth2 + rclone. Each user authorizes Scriptorium to access their own Drive — their novels back up to their own storage, not the admin's. Server stores encrypted per-user refresh tokens; backup job iterates connected users on cron.
 
 ### Frontend
 - **Framework:** SvelteKit
@@ -478,12 +478,14 @@ MyNovel.scriv/
 - **Cache budget:** Configurable max local storage (default: 100MB, adjustable down for old phones)
 - **Indicator:** Library view shows which documents are available offline (subtle icon)
 
-### Backup Cadence (Server-side)
-- rclone sync to Google Drive: every 15 minutes (configurable)
-- git commit of content directory: daily (configurable)
-- Health check: dashboard shows last successful backup time
+### Backup Cadence (Per-user)
+- Each user connects their own Google Drive via OAuth2 (consent screen in Settings)
+- rclone sync per connected user: every 15 minutes (configurable)
+- git commit of content directory: daily (configurable, server-level)
+- Health check: dashboard shows last successful backup time per user
   - Warning if > 1 hour since last backup
   - Alert if > 24 hours
+- Design note: Users own their backup storage — admin doesn't pay for it, and data stays in each user's Drive if they leave. Scriptorium registers as a Google OAuth2 client (admin's existing GCP project, published/unverified). Encrypted refresh tokens stored per-user in DB.
 
 ---
 
@@ -688,7 +690,7 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 - [ ] Session-expiry-safe queue (re-auth without data loss)
 - [ ] Cloudflare Tunnel or Tailscale setup
 - [ ] HTTPS enforcement
-- [ ] Google Drive backup via server-side rclone
+- [ ] Per-user Google Drive backup (OAuth2 flow, encrypted token storage, per-user rclone sync)
 - [ ] Backup health dashboard
 - [ ] SSE or polling for near-real-time sync when online
 
