@@ -12,6 +12,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'novelIdA, docIdA, novelIdB, and docIdB are all required');
 	}
 
+	// Verify documents exist in DB, belong to their novels, and are not soft-deleted
+	const docA = locals.db.prepare(
+		'SELECT id FROM documents WHERE id = ? AND novel_id = ? AND deleted_at IS NULL'
+	).get(docIdA, novelIdA);
+	const docB = locals.db.prepare(
+		'SELECT id FROM documents WHERE id = ? AND novel_id = ? AND deleted_at IS NULL'
+	).get(docIdB, novelIdB);
+	if (!docA) throw error(404, 'Document A not found');
+	if (!docB) throw error(404, 'Document B not found');
+
 	const htmlA = readContentFile(novelIdA, docIdA);
 	const htmlB = readContentFile(novelIdB, docIdB);
 	if (htmlA === null) throw error(404, 'Document A content not found');

@@ -131,21 +131,23 @@ export function matchDocuments(docsA: CompareDocument[], docsB: CompareDocument[
 		}
 	}
 
-	// Phase 4: Unmatched remainder
-	// Sort pairs by Novel A's document order first
+	// Phase 4: Build final result with all docs in Novel A's order
 	const aOrder = new Map(docsA.map((d, i) => [d.id, i]));
 
-	// Matched pairs sorted by A's position
-	const matchedPairs = pairs.sort((x, y) => {
-		const posX = x.docA ? aOrder.get(x.docA.id) ?? Infinity : Infinity;
-		const posY = y.docA ? aOrder.get(y.docA.id) ?? Infinity : Infinity;
-		return posX - posY;
-	});
+	// Index matched pairs by A doc id for O(1) lookup
+	const matchedByAId = new Map<string, MatchedPair>();
+	for (const p of pairs) {
+		if (p.docA) matchedByAId.set(p.docA.id, p);
+	}
 
-	// Unmatched A docs (in original order)
+	// Walk Novel A in order: emit matched pair or unmatched_a at each position
+	const result: MatchedPair[] = [];
 	for (const a of docsA) {
-		if (!consumedA.has(a.id)) {
-			matchedPairs.push({
+		const matched = matchedByAId.get(a.id);
+		if (matched) {
+			result.push(matched);
+		} else if (!consumedA.has(a.id)) {
+			result.push({
 				docA: a, docB: null,
 				method: 'unmatched_a',
 				similarity: 0,
@@ -157,7 +159,7 @@ export function matchDocuments(docsA: CompareDocument[], docsB: CompareDocument[
 	// Unmatched B docs appended at end (in original order)
 	for (const b of docsB) {
 		if (!consumedB.has(b.id)) {
-			matchedPairs.push({
+			result.push({
 				docA: null, docB: b,
 				method: 'unmatched_b',
 				similarity: 0,
@@ -166,5 +168,5 @@ export function matchDocuments(docsA: CompareDocument[], docsB: CompareDocument[
 		}
 	}
 
-	return matchedPairs;
+	return result;
 }

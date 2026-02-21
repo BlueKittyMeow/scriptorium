@@ -465,6 +465,55 @@ describe('Layer 1: executeMerge', () => {
 	});
 });
 
+// ─── Review fixes ───────────────────────────────────────────────
+
+describe('Review fix #1: matchDocuments preserves Novel A ordering for unmatched', () => {
+	it('should interleave unmatched A docs at their original positions', async () => {
+		const { matchDocuments } = await import('$lib/server/compare/match.js');
+		// A has 3 chapters: Ch1 (matched), Ch2 (unmatched), Ch3 (matched)
+		// Result should be: Ch1, Ch2, Ch3 — not Ch1, Ch3, Ch2
+		const docsA = [
+			{ id: 'a1', title: 'Chapter One', novelId: 'na', wordCount: 100, plaintext: 'hello', html: '' },
+			{ id: 'a2', title: 'Interlude', novelId: 'na', wordCount: 50, plaintext: 'unique interlude content xyz', html: '' },
+			{ id: 'a3', title: 'Chapter Three', novelId: 'na', wordCount: 100, plaintext: 'goodbye', html: '' },
+		];
+		const docsB = [
+			{ id: 'b1', title: 'Chapter One', novelId: 'nb', wordCount: 100, plaintext: 'hello', html: '' },
+			{ id: 'b3', title: 'Chapter Three', novelId: 'nb', wordCount: 100, plaintext: 'goodbye', html: '' },
+		];
+		const pairs = matchDocuments(docsA, docsB);
+
+		// Extract the A-side doc ids in result order
+		const aIds = pairs.map(p => p.docA?.id).filter(Boolean);
+		expect(aIds).toEqual(['a1', 'a2', 'a3']);
+	});
+});
+
+describe('Review fix #2: merge instruction validation', () => {
+	it('should validate pairIndex uniqueness and coverage', () => {
+		const source = fs.readFileSync('src/routes/api/compare/merge/+server.ts', 'utf-8');
+		// The endpoint must validate that pairIndex values form a complete 0..N-1 set
+		expect(source).toContain('pairIndex');
+		// Should check for duplicates or validate the set, not just length
+		expect(source).toMatch(/Set|unique|duplicate|every|indexOf/);
+	});
+
+	it('should validate choice values', () => {
+		const source = fs.readFileSync('src/routes/api/compare/merge/+server.ts', 'utf-8');
+		// The endpoint must validate that choice is one of: a, b, both, skip
+		expect(source).toMatch(/choice.*['"]a['"]|validChoices|['"]a['"].*['"]b['"].*['"]both['"].*['"]skip['"]/);
+	});
+});
+
+describe('Review fix #3: diff endpoint DB validation', () => {
+	it('should verify documents exist in DB before reading files', () => {
+		const source = fs.readFileSync('src/routes/api/compare/diff/+server.ts', 'utf-8');
+		// Must query DB to confirm docs exist and are not soft-deleted
+		expect(source).toContain('deleted_at IS NULL');
+		expect(source).toContain('documents');
+	});
+});
+
 // ─── Layer 2: API endpoint source-scans ─────────────────────────
 
 describe('Layer 2: compare API endpoints', () => {

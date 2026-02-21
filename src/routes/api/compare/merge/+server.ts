@@ -36,6 +36,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, `Expected ${pairs.length} instructions, got ${instructions.length}`);
 	}
 
+	// Validate pairIndex uniqueness and coverage (must be exactly 0..N-1)
+	const validChoices = new Set(['a', 'b', 'both', 'skip']);
+	const seenIndices = new Set<number>();
+	for (const inst of instructions) {
+		if (typeof inst.pairIndex !== 'number' || inst.pairIndex < 0 || inst.pairIndex >= pairs.length) {
+			throw error(400, `Invalid pairIndex: ${inst.pairIndex}`);
+		}
+		if (seenIndices.has(inst.pairIndex)) {
+			throw error(400, `Duplicate pairIndex: ${inst.pairIndex}`);
+		}
+		seenIndices.add(inst.pairIndex);
+		if (!validChoices.has(inst.choice)) {
+			throw error(400, `Invalid choice "${inst.choice}" for pairIndex ${inst.pairIndex}`);
+		}
+	}
+
 	const report = executeMerge(
 		locals.db,
 		mergedTitle,
