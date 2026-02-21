@@ -573,3 +573,56 @@ describe('Layer 3: compare UI', () => {
 		expect(source).toContain('DiffChange');
 	});
 });
+
+// ─── Variant-aware CompileDialog ────────────────────────────────
+
+describe('Variant folder tagging', () => {
+	let db: Database.Database;
+	beforeEach(() => { db = createTestDb(); });
+
+	it('executeMerge sets folder_type="variant" on variant folders', async () => {
+		const { executeMerge } = await import('$lib/server/compare/merge.js');
+		seedTwoNovelsForCompare(db);
+		const user = seedUser(db, 'archivist');
+
+		const pairs = [
+			{
+				docA: { id: 'doc-a1', title: 'Chapter One', novelId: 'novel-a', wordCount: 50, plaintext: 'version one text', html: '<p>version one text</p>' },
+				docB: { id: 'doc-b1', title: 'Chapter One', novelId: 'novel-b', wordCount: 50, plaintext: 'version two text', html: '<p>version two text</p>' },
+				method: 'exact_title' as const, similarity: 0.5, titleSimilarity: 1.0,
+			},
+		];
+		const instructions = [{ pairIndex: 0, choice: 'both' as const }];
+
+		const report = executeMerge(db, 'Merged', pairs, instructions, 'Draft A', 'Draft B', user.id);
+
+		// The variant folder should have folder_type = 'variant'
+		const folder = db.prepare('SELECT folder_type FROM folders WHERE novel_id = ?').get(report.novelId) as any;
+		expect(folder).toBeTruthy();
+		expect(folder.folder_type).toBe('variant');
+	});
+});
+
+describe('CompileDialog variant-aware UI', () => {
+	it('detects variant folders via folder_type', () => {
+		const source = fs.readFileSync('src/lib/components/CompileDialog.svelte', 'utf-8');
+		// Must check for folder_type === 'variant' to detect variant folders
+		expect(source).toContain("folder_type");
+		expect(source).toContain("variant");
+	});
+
+	it('renders variant group with badge and version count', () => {
+		const source = fs.readFileSync('src/lib/components/CompileDialog.svelte', 'utf-8');
+		// Must have variant group UI elements
+		expect(source).toContain('variant-group');
+		expect(source).toContain('variant-badge');
+		expect(source).toContain('versions');
+	});
+
+	it('uses variant_group kind in collect entries', () => {
+		const source = fs.readFileSync('src/lib/components/CompileDialog.svelte', 'utf-8');
+		// The flat list must distinguish regular documents from variant groups
+		expect(source).toContain('variant_group');
+		expect(source).toContain("kind");
+	});
+});

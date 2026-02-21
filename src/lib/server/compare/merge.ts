@@ -95,8 +95,8 @@ export function executeMerge(
 					const folderTitle = pair.docA?.title || pair.docB?.title || 'Variant';
 
 					db.prepare(
-						`INSERT INTO folders (id, novel_id, parent_id, title, sort_order, created_at, updated_at)
-						 VALUES (?, ?, NULL, ?, ?, ?, ?)`
+						`INSERT INTO folders (id, novel_id, parent_id, title, folder_type, sort_order, created_at, updated_at)
+						 VALUES (?, ?, NULL, ?, 'variant', ?, ?, ?)`
 					).run(folderId, novelId, folderTitle, sortOrder, now, now);
 
 					foldersCreated++;

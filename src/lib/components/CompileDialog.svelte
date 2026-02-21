@@ -1,6 +1,11 @@
 <script lang="ts">
 	import type { TreeNode, CompileFormat } from '$lib/types.js';
 
+	type CompileEntry =
+		| { kind: 'document'; id: string; title: string; depth: number; compile_include: number }
+		| { kind: 'variant_group'; folderId: string; folderTitle: string; depth: number;
+			variants: { id: string; title: string; compile_include: number }[] };
+
 	let {
 		novelId,
 		novelTitle,
@@ -21,23 +26,41 @@
 	let errorMsg: string | null = $state(null);
 	let pendingToggles = $state(0);
 
-	// Build a flat list of documents from the tree for the include checklist
+	// Build a flat list of documents and variant groups from the tree
 	const flatDocs = $derived(collectDocs(tree));
 
-	function collectDocs(nodes: TreeNode[]): { id: string; title: string; depth: number; compile_include: number }[] {
-		const result: { id: string; title: string; depth: number; compile_include: number }[] = [];
+	function collectDocs(nodes: TreeNode[]): CompileEntry[] {
+		const result: CompileEntry[] = [];
 		function walk(nodes: TreeNode[], depth: number) {
 			for (const node of nodes) {
 				if (node.deleted_at) continue;
 				if (node.type === 'document') {
 					result.push({
+						kind: 'document',
 						id: node.id,
 						title: node.title,
 						depth,
 						compile_include: node.compile_include ?? 1
 					});
-				}
-				if (node.type === 'folder' && node.children) {
+				} else if (node.type === 'folder' && node.folder_type === 'variant') {
+					// Variant folder: emit as a group with its document children
+					const variants = (node.children || [])
+						.filter(c => c.type === 'document' && !c.deleted_at)
+						.map(c => ({
+							id: c.id,
+							title: c.title,
+							compile_include: c.compile_include ?? 0
+						}));
+					if (variants.length > 0) {
+						result.push({
+							kind: 'variant_group',
+							folderId: node.id,
+							folderTitle: node.title,
+							depth,
+							variants
+						});
+					}
+				} else if (node.type === 'folder' && node.children) {
 					walk(node.children, depth + 1);
 				}
 			}
@@ -148,15 +171,35 @@
 			<div class="form-group">
 				<label>Include in compilation</label>
 				<div class="doc-checklist">
-					{#each flatDocs as doc}
-						<label class="doc-check" style="padding-left: {doc.depth * 1.25}rem">
-							<input
-								type="checkbox"
-								checked={doc.compile_include === 1}
-								onchange={() => toggleCompileInclude(doc.id, doc.compile_include)}
-							/>
-							<span class="doc-check-title">{doc.title}</span>
-						</label>
+					{#each flatDocs as entry}
+						{#if entry.kind === 'document'}
+							<label class="doc-check" style="padding-left: {entry.depth * 1.25}rem">
+								<input
+									type="checkbox"
+									checked={entry.compile_include === 1}
+									onchange={() => toggleCompileInclude(entry.id, entry.compile_include)}
+								/>
+								<span class="doc-check-title">{entry.title}</span>
+							</label>
+						{:else if entry.kind === 'variant_group'}
+							<div class="variant-group" style="padding-left: {entry.depth * 1.25}rem">
+								<div class="variant-header">
+									<span class="variant-badge">Variant</span>
+									<span class="variant-title">{entry.folderTitle}</span>
+									<span class="variant-count">{entry.variants.length} versions</span>
+								</div>
+								{#each entry.variants as v}
+									<label class="doc-check variant-child">
+										<input
+											type="checkbox"
+											checked={v.compile_include === 1}
+											onchange={() => toggleCompileInclude(v.id, v.compile_include)}
+										/>
+										<span class="doc-check-title">{v.title}</span>
+									</label>
+								{/each}
+							</div>
+						{/if}
 					{/each}
 					{#if flatDocs.length === 0}
 						<p class="empty-note">No documents in this novel yet.</p>
@@ -272,6 +315,51 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.variant-group {
+		border-left: 3px solid var(--accent);
+		margin: 0.25rem 0;
+		background: var(--bg-elevated);
+		border-radius: 0 6px 6px 0;
+	}
+
+	.variant-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		font-size: 0.85rem;
+	}
+
+	.variant-badge {
+		background: var(--accent);
+		color: var(--text-on-accent);
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 0.1rem 0.4rem;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		flex-shrink: 0;
+	}
+
+	.variant-title {
+		font-weight: 500;
+		color: var(--text-heading);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.variant-count {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.variant-child {
+		padding-left: 1.5rem;
 	}
 
 	.empty-note {
