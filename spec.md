@@ -1,6 +1,6 @@
 # Scriptorium
 ### A preservation-first writing application
-### Design Document v0.7
+### Design Document v0.8
 
 ---
 
@@ -490,9 +490,16 @@ MyNovel.scriv/
 ## API Routes (Draft)
 
 ### Auth
-- POST /auth/login
-- POST /auth/logout
-- GET  /auth/me
+- POST /api/auth/setup (first-run only — creates archivist account)
+- POST /api/auth/login (rate-limited, sets httpOnly session cookie)
+- POST /api/auth/logout (destroys current session)
+- POST /api/auth/logout-all (destroys all sessions for current user)
+- GET  /api/auth/me (returns current user or 401)
+
+### Import
+- POST /api/import (single .scriv import — requireUser)
+- GET  /api/import/scan (recursive directory scan — requireUser)
+- POST /api/import/batch (batch .scriv import — requireUser)
 
 ### Sync
 - POST /api/sync (primary sync endpoint — see Sync Protocol above)
@@ -549,13 +556,16 @@ MyNovel.scriv/
 - GET  /api/worlds/:id/graph (visualization data)
 
 ### Admin (Archivist only)
-- GET  /api/admin/trash
-- POST /api/admin/trash/:id/restore
-- DELETE /api/admin/trash/:id/purge (permanent, with confirmation token)
-- GET  /api/admin/backups (status, last run, health)
-- GET  /api/admin/storage (snapshot counts, disk usage, growth trends)
-- POST /api/admin/import/scriv (upload .scriv directory)
-- GET  /api/admin/audit-log
+- GET  /api/admin/users (list all users)
+- POST /api/admin/users (create user with username, password, role)
+- PATCH /api/admin/users/:userId (change password/role — invalidates sessions)
+- DELETE /api/admin/users/:userId (delete user — last-archivist protected)
+- GET  /api/admin/trash (list soft-deleted novels, folders, documents)
+- POST /api/admin/trash/:type/:id/restore (restore item, re-index FTS)
+- DELETE /api/admin/trash/:type/:id/purge (permanent delete with file cleanup)
+- GET  /api/admin/storage (snapshot counts, disk usage, per-novel metrics)
+- GET  /api/admin/audit (paginated audit log with user/action filters)
+- GET  /api/admin/backups (status, last run, health — Phase 3)
 
 ---
 
@@ -633,15 +643,23 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 - [ ] Import Scrivener snapshots (if present in .scriv)
 - [ ] Richer .scriv import (iterate on RTF edge cases: footnotes, annotations, embedded images)
 
-### Phase 2: The Lock and Key 🔐
+### Phase 2: The Lock and Key 🔐 ✅
 *Goal: Two users, protected access*
 
-- [ ] User auth (login/logout/sessions via SvelteKit hooks — re-evaluate Express if auth complexity demands it)
-- [ ] Writer vs Archivist roles
-- [ ] Archivist admin panel
-- [ ] Trash management (restore/purge)
-- [ ] Audit log
-- [ ] Storage monitoring dashboard
+- [x] User auth (bcryptjs + SvelteKit hooks — Express not needed)
+- [x] Writer vs Archivist roles with route guards (`requireUser`, `requireArchivist`)
+- [x] Session management (SHA-256 hashed tokens, 30-day sliding expiry with 7-day threshold)
+- [x] First-run setup flow (zero users → `/setup` → create archivist)
+- [x] Login with rate limiting (5/min/IP), generic error messages
+- [x] Archivist admin panel (4 tabs: Users, Trash, Storage, Audit Log)
+- [x] Trash management (restore with FTS re-index, purge with file cleanup)
+- [x] Audit log with pagination and filtering
+- [x] Storage monitoring dashboard (novel/doc/snapshot counts, disk usage)
+- [x] Session invalidation on password/role change
+- [x] Global logout (`POST /api/auth/logout-all`)
+- [x] CLI password reset script (`scripts/reset-password.js`)
+- [x] Import moved to `/api/import/` (writer action, not admin-only)
+- [x] Code review fixes (Codex + Gemini): hashed session tokens, sliding expiry optimization, last-archivist transaction guard, audit debounce
 
 ### Phase 3: The Scriptorium Opens 🌐
 *Goal: Kyla accesses from anywhere*
@@ -772,10 +790,20 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
   - **Batch import marked complete** — recursive `.scriv` scanning, batch API with per-path error isolation, reworked library UI with 7-state import modal
   - **Security hardening** — homedir boundary with path-separator-aware prefix check, tilde expansion, server-side trim, symlink safety via `dirent.isDirectory()`
   - **Bug hunt + code review cycle** — 4 bugs found and fixed, then Codex review caught prefix bypass vulnerability
-  - **Test coverage** — 149 tests across 11 files
+  - **Test coverage** — 149 tests across 11 files (at time of 1c completion)
+
+- **v0.8** — Phase 2 complete. Changes:
+  - **Auth system marked complete** — bcryptjs password hashing, SHA-256 session tokens, 30-day sliding expiry with 7-day threshold, rate-limited login, first-run setup, session invalidation on credential changes
+  - **Admin panel shipped** — 4-tab UI (Users, Trash, Storage, Audit Log), user CRUD with last-archivist protection, trash restore/purge with FTS re-index, paginated audit log
+  - **Import moved** — from `/api/admin/import/` to `/api/import/` (writers can import)
+  - **New features** — global logout endpoint (`/api/auth/logout-all`), CLI password reset script (`scripts/reset-password.js`)
+  - **API routes updated** — auth routes, admin routes (users, trash, storage, audit), import routes all documented
+  - **Documentation** — `docs/security.md` (auth/session/storage reference), `docs/multi-tenancy-design-notes.md` (future design considerations)
+  - **Code review** — Codex + Gemini reviews adopted 8 findings: hashed session tokens, sliding expiry optimization, session invalidation on password/role change, import route prefix, account recovery CLI, session cleanup trigger, last-archivist transaction guard, audit debounce
+  - **Test coverage** — 189 tests across 12 files
 
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.7
+— Scriptorium design document, v0.8
