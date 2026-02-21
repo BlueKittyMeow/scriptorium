@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { cascadeDeleteChildren, restoreChildFts, reindexDocFts } from '$lib/server/tree-ops.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // DELETE /api/novels/:id/tree/nodes/:nodeId — soft-delete
 export const DELETE: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const now = new Date().toISOString();
 	const url = new URL(request.url);
 	const nodeType = url.searchParams.get('type') || 'document';
@@ -30,6 +32,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 
 // PATCH — rename or restore a node
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const now = new Date().toISOString();
 	const nodeType = body.type || 'document';

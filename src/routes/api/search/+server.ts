@@ -1,9 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sanitizeSnippet } from '$lib/server/validate.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/search?q=...&novel=...
 export const GET: RequestHandler = async ({ url, locals }) => {
+	requireUser(locals);
 	const query = url.searchParams.get('q');
 	if (!query || !query.trim()) return json([]);
 

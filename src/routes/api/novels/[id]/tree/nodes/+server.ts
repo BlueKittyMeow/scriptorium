@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { writeContentFile } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // POST /api/novels/:id/tree/nodes — create a folder or document
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const id = uuid();
 	const now = new Date().toISOString();

@@ -3,9 +3,11 @@ import type { RequestHandler } from './$types';
 import { collectCompileDocuments } from '$lib/server/compile/tree-walk.js';
 import { assembleCompileHtml } from '$lib/server/compile/assemble.js';
 import { readContentFile } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/novels/:id/compile/preview — HTML preview (no Pandoc needed)
 export const GET: RequestHandler = async ({ params, url, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!novel) throw error(404, 'Novel not found');
 

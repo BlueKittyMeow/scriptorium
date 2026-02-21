@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -72,6 +73,35 @@ CREATE TABLE IF NOT EXISTS compile_configs (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'writer' CHECK(role IN ('writer', 'archivist')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  details TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_document ON snapshots(document_id);
 CREATE INDEX IF NOT EXISTS idx_compile_configs_novel ON compile_configs(novel_id);
 `;
@@ -93,6 +123,27 @@ export function createTempDir(): string {
 /** Clean up a temp directory */
 export function cleanupTempDir(dir: string): void {
 	fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/** Seed a user for testing. Returns { id, username, role }. Password is 'test-password'. */
+let userCounter = 0;
+export function seedUser(
+	db: Database.Database,
+	role: 'writer' | 'archivist' = 'writer',
+	username?: string
+): { id: string; username: string; role: string } {
+	const id = crypto.randomUUID();
+	const name = username || `test-${role}-${++userCounter}`;
+	const now = new Date().toISOString();
+	// Pre-computed bcrypt hash of 'test-password' with cost 10 (fast for tests)
+	const passwordHash = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
+	db.prepare(
+		`INSERT INTO users (id, username, password_hash, role, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`
+	).run(id, name, passwordHash, role, now, now);
+
+	return { id, username: name, role };
 }
 
 const now = new Date().toISOString();

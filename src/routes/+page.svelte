@@ -83,7 +83,7 @@
 		importError = null;
 		singleReport = null;
 		try {
-			const res = await fetch('/api/admin/import', {
+			const res = await fetch('/api/import', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ path: importPath.trim() })
@@ -112,7 +112,7 @@
 		scanAbort = abort;
 
 		try {
-			const res = await fetch('/api/admin/import/scan', {
+			const res = await fetch('/api/import/scan', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ path: importPath.trim() }),
@@ -167,7 +167,7 @@
 		batchProgress = { current: 0, total: paths.length, currentName: '' };
 
 		try {
-			const res = await fetch('/api/admin/import/batch', {
+			const res = await fetch('/api/import/batch', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ paths })

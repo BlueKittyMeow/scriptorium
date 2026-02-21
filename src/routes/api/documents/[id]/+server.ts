@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { readContentFile, writeContentFile, writeSnapshotFile, stripHtml, countWords } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/documents/:id — metadata + content
 export const GET: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
@@ -14,6 +16,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 // PUT /api/documents/:id — save content
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const now = new Date().toISOString();
 

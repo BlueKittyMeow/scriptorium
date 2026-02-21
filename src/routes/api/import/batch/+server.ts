@@ -4,9 +4,11 @@ import { realpathSync, statSync } from 'fs';
 import os from 'os';
 import { importScriv } from '$lib/server/import/scriv.js';
 import type { ImportReport } from '$lib/types.js';
+import { requireUser } from '$lib/server/auth.js';
 
-// POST /api/admin/import/batch — import multiple .scriv projects
+// POST /api/import/batch — import multiple .scriv projects
 export const POST: RequestHandler = async ({ request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const paths = body.paths;
 

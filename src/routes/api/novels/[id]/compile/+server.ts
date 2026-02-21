@@ -6,9 +6,11 @@ import { convertHtmlToFormat, checkPandocAvailable } from '$lib/server/compile/p
 import { readContentFile } from '$lib/server/files.js';
 import { VALID_FORMATS, FORMAT_CONFIG } from '$lib/server/compile/types.js';
 import type { CompileFormat } from '$lib/server/compile/types.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // POST /api/novels/:id/compile — compile and download
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!novel) throw error(404, 'Novel not found');
 

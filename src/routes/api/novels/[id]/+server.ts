@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { softDeleteNovel } from '$lib/server/tree-ops.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/novels/:id
 export const GET: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare(`
 		SELECT n.*, COALESCE(SUM(d.word_count), 0) as total_word_count
 		FROM novels n
@@ -18,6 +20,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 // PUT /api/novels/:id — update novel metadata
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const now = new Date().toISOString();
 
@@ -40,6 +43,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 // DELETE /api/novels/:id — soft-delete
 export const DELETE: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const now = new Date().toISOString();
 
 	const existing = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);

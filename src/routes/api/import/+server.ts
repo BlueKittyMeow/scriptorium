@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { existsSync } from 'fs';
 import { importScriv } from '$lib/server/import/scriv.js';
+import { requireUser } from '$lib/server/auth.js';
 
-// POST /api/admin/import — import a .scriv directory
+// POST /api/import — import a .scriv directory
 export const POST: RequestHandler = async ({ request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const scrivPath = body.path;
 

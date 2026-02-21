@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { TreeNode } from '$lib/types.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/novels/:id/tree — full binder tree
 export const GET: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!novel) throw error(404, 'Novel not found');
 
@@ -55,6 +57,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 // PUT /api/novels/:id/tree/reorder — move/reparent a node
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const { node_id, node_type, new_parent_id, new_sort_order } = body;
 	const now = new Date().toISOString();

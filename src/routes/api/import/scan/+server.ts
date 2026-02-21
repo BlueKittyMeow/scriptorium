@@ -3,9 +3,11 @@ import type { RequestHandler } from './$types';
 import { realpathSync, statSync } from 'fs';
 import os from 'os';
 import { scanForScrivProjects } from '$lib/server/import/scan.js';
+import { requireUser } from '$lib/server/auth.js';
 
-// POST /api/admin/import/scan — scan a directory for .scriv bundles
+// POST /api/import/scan — scan a directory for .scriv bundles
 export const POST: RequestHandler = async ({ request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const inputPath = typeof body.path === 'string' ? body.path.trim() : body.path;
 

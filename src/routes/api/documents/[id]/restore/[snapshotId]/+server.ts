@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { readContentFile, writeContentFile, writeSnapshotFile, readSnapshotFile, stripHtml, countWords } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // POST /api/documents/:id/restore/:snapshotId — non-destructive restore
 export const POST: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const now = new Date().toISOString();
 
 	// 1. Validate document exists and is not deleted

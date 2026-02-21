@@ -3,9 +3,11 @@ import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { VALID_FORMATS } from '$lib/server/compile/types.js';
 import type { CompileFormat } from '$lib/server/compile/types.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/novels/:id/compile/configs — list all configs for a novel
 export const GET: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare('SELECT id FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!novel) throw error(404, 'Novel not found');
 
@@ -18,6 +20,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 // POST /api/novels/:id/compile/configs — create a new config
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const novel = locals.db.prepare('SELECT id FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!novel) throw error(404, 'Novel not found');
 

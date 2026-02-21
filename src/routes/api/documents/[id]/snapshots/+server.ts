@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { readContentFile, writeSnapshotFile, countWords, stripHtml } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/documents/:id/snapshots — list snapshots (paginated)
 export const GET: RequestHandler = async ({ params, locals, url }) => {
+	requireUser(locals);
 	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!doc) throw error(404, 'Document not found');
 
@@ -20,6 +22,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 
 // POST /api/documents/:id/snapshots — manual snapshot
 export const POST: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 

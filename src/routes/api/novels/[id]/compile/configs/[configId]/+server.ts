@@ -2,9 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { VALID_FORMATS } from '$lib/server/compile/types.js';
 import type { CompileFormat } from '$lib/server/compile/types.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // PUT /api/novels/:id/compile/configs/:configId — update a config
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	requireUser(locals);
 	const config = locals.db.prepare(
 		'SELECT * FROM compile_configs WHERE id = ? AND novel_id = ?'
 	).get(params.configId, params.id);
@@ -43,6 +45,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 // DELETE /api/novels/:id/compile/configs/:configId — delete a config
 export const DELETE: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	const config = locals.db.prepare(
 		'SELECT * FROM compile_configs WHERE id = ? AND novel_id = ?'
 	).get(params.configId, params.id);

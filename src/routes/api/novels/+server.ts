@@ -2,9 +2,11 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { ensureNovelDirs } from '$lib/server/files.js';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/novels — list all non-deleted novels
 export const GET: RequestHandler = async ({ locals }) => {
+	requireUser(locals);
 	const novels = locals.db.prepare(`
 		SELECT n.*, COALESCE(SUM(d.word_count), 0) as total_word_count
 		FROM novels n
@@ -18,6 +20,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 // POST /api/novels — create a new novel
 export const POST: RequestHandler = async ({ request, locals }) => {
+	requireUser(locals);
 	const body = await request.json();
 	const id = uuid();
 	const now = new Date().toISOString();

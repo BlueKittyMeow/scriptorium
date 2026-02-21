@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import fs from 'fs';
+import { requireUser } from '$lib/server/auth.js';
 
 // GET /api/documents/:id/snapshots/:snapId — read snapshot content
 export const GET: RequestHandler = async ({ params, locals }) => {
+	requireUser(locals);
 	// Verify the parent document exists and is not soft-deleted
 	const doc = locals.db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!doc) throw error(404, 'Document not found');

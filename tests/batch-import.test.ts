@@ -243,7 +243,7 @@ describe('batch import', () => {
 		// The batch endpoint should include this as an error in results,
 		// not throw an unhandled exception. Test at endpoint source level.
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		// Should check isDirectory or statSync to catch non-directory paths
@@ -254,7 +254,7 @@ describe('batch import', () => {
 
 	it('should handle nonexistent path gracefully', async () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		// Should check existence and not throw — errors go into results
@@ -270,7 +270,7 @@ describe('batch import', () => {
 describe('scan endpoint', () => {
 	it('should validate path is a directory', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		expect(
@@ -280,7 +280,7 @@ describe('scan endpoint', () => {
 
 	it('should enforce homedir boundary', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		expect(
@@ -292,7 +292,7 @@ describe('scan endpoint', () => {
 describe('batch endpoint', () => {
 	it('should validate paths is an array', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		expect(source.includes('Array.isArray')).toBe(true);
@@ -300,7 +300,7 @@ describe('batch endpoint', () => {
 
 	it('should call importScriv for each path', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		expect(source.includes('importScriv')).toBe(true);
@@ -316,7 +316,7 @@ describe('bug fixes', () => {
 	// Bug 1: Tilde expansion — realpathSync('~/Writing') throws ENOENT
 	it('scan endpoint should expand tilde before resolving path', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		// Should replace ~ with homedir before passing to realpathSync
@@ -325,7 +325,7 @@ describe('bug fixes', () => {
 
 	it('batch endpoint should expand tilde before resolving path', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		// Should replace ~ with homedir
@@ -356,7 +356,7 @@ describe('bug fixes', () => {
 	// Bug 3: Batch summary counts partial successes as failures
 	it('batch endpoint should count by novel_id not just errors', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		// The "succeeded" filter should check novel_id, not just errors.length === 0
@@ -367,7 +367,7 @@ describe('bug fixes', () => {
 	// Bug 4: Batch endpoint missing homedir boundary
 	it('batch endpoint should enforce homedir boundary', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		expect(source).toMatch(/homeDir|os\.homedir/);
@@ -377,7 +377,7 @@ describe('bug fixes', () => {
 	// /home/user matches /home/user2 — must check with trailing separator
 	it('scan endpoint should use path-separator-aware homedir check', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		// Must check homeDir + '/' or path.sep, not bare startsWith(homeDir)
@@ -386,7 +386,7 @@ describe('bug fixes', () => {
 
 	it('batch endpoint should use path-separator-aware homedir check', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/batch/+server.ts'),
+			path.resolve('src/routes/api/import/batch/+server.ts'),
 			'utf8'
 		);
 		expect(source).toMatch(/startsWith\(homeDir\s*\+\s*['"`]\/['"`]\)/);
@@ -395,7 +395,7 @@ describe('bug fixes', () => {
 	// Bug 6 (Codex review): scan endpoint should trim input server-side
 	it('scan endpoint should trim input path', () => {
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		// inputPath should be trimmed before expansion/resolution
@@ -420,7 +420,7 @@ describe('duplicate detection', () => {
 
 		// The scan endpoint should cross-reference against the DB
 		const source = fs.readFileSync(
-			path.resolve('src/routes/api/admin/import/scan/+server.ts'),
+			path.resolve('src/routes/api/import/scan/+server.ts'),
 			'utf8'
 		);
 		// Should query novels table for duplicate detection
