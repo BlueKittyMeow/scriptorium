@@ -1,6 +1,6 @@
 # Scriptorium
 ### A preservation-first writing application
-### Design Document v0.8
+### Design Document v0.9
 
 ---
 
@@ -548,6 +548,11 @@ MyNovel.scriv/
 - PATCH /api/novels/:id/tree/nodes/:nodeId (compile_include toggle)
   - Body: `{ compile_include: true|false }`
 
+### Compare / Merge
+- POST /api/compare/match (match chapters between two novels — requireUser)
+- POST /api/compare/diff (word-level diff for a document pair — requireUser)
+- POST /api/compare/merge (execute merge with instructions — requireUser)
+
 ### Characters & Links (Phase 4)
 - CRUD for characters
 - CRUD for worlds
@@ -660,6 +665,19 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
 - [x] CLI password reset script (`scripts/reset-password.js`)
 - [x] Import moved to `/api/import/` (writer action, not admin-only)
 - [x] Code review fixes (Codex + Gemini): hashed session tokens, sliding expiry optimization, last-archivist transaction guard, audit debounce
+
+### Interstitial: The Difference Engine ✅
+*Novel comparison & merge for cataloguing multiple drafts*
+
+- [x] 4-phase document matching (exact title, fuzzy title, content similarity, unmatched)
+- [x] Word-level plaintext diffing via jsdiff (HTML stripped, formatting differences ignored)
+- [x] Jaccard similarity for content matching (word-set overlap, 0.3 threshold)
+- [x] Merge with per-chapter choices: Use A, Use B, Keep Both (variant folder), Skip
+- [x] Variant folders with `compile_include = 0` and draft provenance tracking (`synopsis = "From: {source}"`)
+- [x] 3 API endpoints (match, diff, merge) with auth guards and server-side recomputation
+- [x] Compare page at `/novels/compare` (3-step wizard: select → compare → merge)
+- [x] DiffView and MergeControls components
+- [x] Code review fixes (Codex + Gemini): unmatched doc ordering, instruction validation, diff endpoint DB checks
 
 ### Phase 3: The Scriptorium Opens 🌐
 *Goal: Kyla accesses from anywhere*
@@ -802,8 +820,16 @@ No auth, no sync, no offline cache — single-process SvelteKit on `localhost:51
   - **Code review** — Codex + Gemini reviews adopted 8 findings: hashed session tokens, sliding expiry optimization, session invalidation on password/role change, import route prefix, account recovery CLI, session cleanup trigger, last-archivist transaction guard, audit debounce
   - **Test coverage** — 189 tests across 12 files
 
+- **v0.9** — Difference Engine complete. Changes:
+  - **Novel comparison & merge shipped** — 4-phase document matching (exact title, fuzzy title, Jaccard content similarity, unmatched), word-level plaintext diffing via jsdiff, merge with per-chapter choices (Use A / Use B / Keep Both / Skip)
+  - **Variant folders** — "Keep Both" creates folder with two child documents (`compile_include = 0`), draft provenance tracked via synopsis field ("From: {source novel title}")
+  - **3 API endpoints** — match, diff, merge with auth guards and server-side recomputation (don't trust client pair data)
+  - **Compare page** — 3-step wizard at `/novels/compare` (select → compare with inline diffs → merge), DiffView and MergeControls components
+  - **Code review fixes** — Codex + Gemini reviews adopted 3 findings: unmatched doc ordering (interleaved at correct position in Novel A's order), merge instruction validation (pairIndex uniqueness + choice values), diff endpoint DB existence checks
+  - **Test coverage** — 228 tests across 13 files
+
 ---
 
 *"The writer writes. The archivist keeps. Neither needs to think about the other's work."*
 
-— Scriptorium design document, v0.8
+— Scriptorium design document, v0.9
