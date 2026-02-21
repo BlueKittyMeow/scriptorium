@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { existsSync } from 'fs';
 import { importScriv } from '$lib/server/import/scriv.js';
 import { requireUser } from '$lib/server/auth.js';
+import { logAction } from '$lib/server/audit.js';
 
 // POST /api/import — import a .scriv directory
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -23,6 +24,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (report.errors.length > 0 && report.docs_imported === 0) {
 		throw error(500, `Import failed: ${report.errors.join(', ')}`);
 	}
+
+	logAction(locals.db, locals.user!.id, 'import.single', 'novel', report.novel_id, `Imported "${report.novel_title}"`);
 
 	return json(report, { status: 201 });
 };

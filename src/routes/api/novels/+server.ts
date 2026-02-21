@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { ensureNovelDirs } from '$lib/server/files.js';
 import { requireUser } from '$lib/server/auth.js';
+import { logAction } from '$lib/server/audit.js';
 
 // GET /api/novels — list all non-deleted novels
 export const GET: RequestHandler = async ({ locals }) => {
@@ -31,6 +32,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	`).run(id, body.title || 'Untitled Novel', body.subtitle || null, body.status || 'draft', body.word_count_target || null, now, now);
 
 	ensureNovelDirs(id);
+
+	logAction(locals.db, locals.user!.id, 'novel.create', 'novel', id, `Created "${body.title || 'Untitled Novel'}"`);
 
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ?').get(id);
 	return json(novel, { status: 201 });

@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { softDeleteNovel } from '$lib/server/tree-ops.js';
 import { requireUser } from '$lib/server/auth.js';
+import { logAction } from '$lib/server/audit.js';
 
 // GET /api/novels/:id
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -53,6 +54,8 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 		softDeleteNovel(locals.db, params.id, now);
 	});
 	doSoftDelete();
+
+	logAction(locals.db, locals.user!.id, 'novel.delete', 'novel', params.id);
 
 	return json({ success: true });
 };

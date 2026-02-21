@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
 
 	let theme = $state('system');
 	let mounted = $state(false);
+
+	async function logout() {
+		await fetch('/api/auth/logout', { method: 'POST' });
+		window.location.href = '/login';
+	}
 
 	const themeIcon = $derived(theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◑');
 	const themeTitle = $derived(
@@ -46,9 +51,18 @@
 </div>
 
 {#if mounted}
-	<button class="theme-toggle" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
-		{themeIcon}
-	</button>
+	<div class="top-bar">
+		{#if data.user}
+			<span class="user-info">{data.user.username} <span class="role-tag">{data.user.role}</span></span>
+			{#if data.user.role === 'archivist'}
+				<a href="/admin" class="admin-link">Admin</a>
+			{/if}
+			<button class="logout-btn" onclick={logout}>Sign Out</button>
+		{/if}
+		<button class="theme-toggle" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
+			{themeIcon}
+		</button>
+	</div>
 {/if}
 
 <style>
@@ -157,11 +171,49 @@
 		min-height: 100vh;
 	}
 
-	.theme-toggle {
+	.top-bar {
 		position: fixed;
-		top: 0.75rem;
-		right: 0.75rem;
+		top: 0;
+		right: 0;
 		z-index: 200;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.user-info {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.role-tag {
+		font-size: 0.7rem;
+		background: var(--accent-bg);
+		padding: 0.1rem 0.35rem;
+		border-radius: 3px;
+		color: var(--text-muted);
+	}
+
+	.admin-link {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		text-decoration: none;
+	}
+	.admin-link:hover { text-decoration: underline; }
+
+	.logout-btn {
+		font-size: 0.75rem;
+		background: none;
+		border: 1px solid var(--border-input);
+		border-radius: 3px;
+		color: var(--text-secondary);
+		padding: 0.15rem 0.4rem;
+		cursor: pointer;
+	}
+	.logout-btn:hover { background: var(--bg-elevated); }
+
+	.theme-toggle {
 		width: 2rem;
 		height: 2rem;
 		border-radius: 50%;

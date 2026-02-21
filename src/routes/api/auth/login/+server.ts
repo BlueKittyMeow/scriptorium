@@ -7,6 +7,7 @@ import {
 	SESSION_COOKIE_NAME,
 	SESSION_MAX_AGE
 } from '$lib/server/auth.js';
+import { logAction } from '$lib/server/audit.js';
 
 // Simple in-memory rate limiting: 5 attempts per minute per IP
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -65,6 +66,8 @@ export const POST: RequestHandler = async ({ request, locals, cookies, getClient
 	// Determine if we should set secure flag
 	const host = request.headers.get('host') || '';
 	const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+
+	logAction(locals.db, user.id, 'user.login');
 
 	cookies.set(SESSION_COOKIE_NAME, session.token, {
 		path: '/',
