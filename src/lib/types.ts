@@ -108,6 +108,58 @@ export interface BatchImportResult {
 	};
 }
 
+// ─── Compare / Merge types ──────────────────────────────────────
+
+export interface CompareDocument {
+	id: string;
+	title: string;
+	novelId: string;
+	wordCount: number;
+	plaintext: string;
+	html: string;
+}
+
+export type MatchMethod = 'exact_title' | 'fuzzy_title' | 'content_similarity' | 'unmatched_a' | 'unmatched_b';
+
+export interface MatchedPair {
+	docA: CompareDocument | null;
+	docB: CompareDocument | null;
+	method: MatchMethod;
+	similarity: number;
+	titleSimilarity: number;
+}
+
+export interface DiffChange {
+	value: string;
+	added?: boolean;
+	removed?: boolean;
+}
+
+export interface PairDiff {
+	pairIndex: number;
+	changes: DiffChange[];
+	wordCountA: number;
+	wordCountB: number;
+}
+
+export type MergeChoice = 'a' | 'b' | 'both' | 'skip';
+
+export interface MergeInstruction {
+	pairIndex: number;
+	choice: MergeChoice;
+}
+
+export interface MergeReport {
+	novelId: string;
+	novelTitle: string;
+	documentsCreated: number;
+	foldersCreated: number;
+	variantFolders: number;
+	totalWordCount: number;
+}
+
+// ─── Compile types ──────────────────────────────────────────────
+
 export type CompileFormat = 'docx' | 'epub' | 'pdf' | 'markdown';
 
 export interface CompileConfig {

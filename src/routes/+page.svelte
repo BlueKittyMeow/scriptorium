@@ -225,6 +225,7 @@
 	<div class="actions">
 		<button class="btn btn-primary" onclick={() => showNewNovelModal = true}>New Novel</button>
 		<button class="btn btn-secondary" onclick={openImportModal}>Import .scriv</button>
+		<a class="btn btn-secondary" href="/novels/compare">Compare Drafts</a>
 	</div>
 
 	{#if loading}
