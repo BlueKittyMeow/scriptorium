@@ -169,8 +169,19 @@ DB inserts happen incrementally across `await` points (RTF conversion), so a pro
 
 ## P2 — Hygiene, robustness, DX
 
-### P2-1. Fix the failing typecheck: missing type packages
-`npm run check` reports 108 errors — every one is `Cannot find module 'fs'/'path'/'os'` or missing better-sqlite3 types in `tests/`. Fix: `npm i -D @types/node @types/better-sqlite3`. This makes `check` a usable gate again; consider adding `npm run check && npm test` as a pre-commit habit (repo has no remote/CI).
+### P2-1. Fix the failing typecheck: missing type packages, then 9 real errors
+`npm run check` reports 108 errors — every one is `Cannot find module 'fs'/'path'/'os'` or missing better-sqlite3 types in `tests/`. Fix: `npm i -D @types/node @types/better-sqlite3`. This makes `check` a usable gate again; consider adding `npm run check && npm test` as a pre-commit habit.
+
+**Verified 2026-07-08:** after installing those two packages, the noise drops away and **9 genuine type errors + 2 warnings** surface. None are behavior bugs, but they must be fixed for `check` to go green:
+
+1. `vite.config.ts:6` — `test` is not a known key: import `defineConfig` from **`vitest/config`** instead of `vite`.
+2. `src/lib/server/import/scriv.ts:3` — `@iarna/rtf-to-html` has no types: add `src/ambient.d.ts` containing `declare module '@iarna/rtf-to-html';`.
+3. `src/routes/api/novels/[id]/compile/+server.ts:61` — `Buffer` isn't assignable to `BodyInit` under DOM types: wrap as `new Response(new Uint8Array(result.buffer), ...)` (compile outputs are small; the copy is fine).
+4. `src/routes/api/novels/[id]/tree/nodes/+server.ts:24` and `:38` — spreading an `unknown` row now that better-sqlite3 is typed: cast the `.get(id)` result `as Record<string, unknown>`.
+5. `src/routes/+page.svelte:31` (×3) — `let importMode: ImportMode = $state('idle')` narrows to the literal `'idle'`; use the generic form `$state<ImportMode>('idle')`.
+6. `src/routes/novels/[id]/+page.svelte:657` — `$page.params.id` is `string | undefined` but `CompileDialog.novelId` wants `string`: `const novelId = $derived($page.params.id!)` (the route guarantees the param).
+
+Warnings worth clearing while there: `novels/[id]/+page.svelte:26` — `searchInputEl` is reassigned via `bind:this` but not `$state`; declare `let searchInputEl = $state<HTMLInputElement | undefined>()`. `CompileDialog.svelte:172` — the bare `<label>Include in compilation</label>` has no associated control; change to a `<span>`/`<p>` with the same styling (or a `fieldset`/`legend`).
 
 ### P2-2. Client `saveDocument` ignores HTTP failures
 [+page.svelte](../src/routes/novels/[id]/+page.svelte) `saveDocument` never checks `res.ok`, so a failed save still resolves and the Editor shows **Saved**. Fix: `if (!res.ok) throw new Error(...)` — Editor's `triggerSave` catch already flips status to `unsaved`. Do this together with P0-1 since the function is being edited anyway.
