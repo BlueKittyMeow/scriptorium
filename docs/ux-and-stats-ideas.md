@@ -80,8 +80,15 @@ Editor header (or footer) ‹ › stepping through binder order (reuse the compi
 ### N.4 Dynamic tab titles (S)
 `<svelte:head><title>{doc} — {novel} — Scriptorium</title></svelte:head>`. Costs minutes; makes browser tabs, history, and PWA task-switcher legible.
 
-### N.5 Archive shelf for novels (S–M) — *matters for the draft-triage workflow below*
-When dozens of imported drafts land in the library, active writing drowns. `novels.status` already exists (`draft` by default) — add `archived` as a value, an Archive/Unarchive action on the card menu, and a default library filter of non-archived with an "Archived (23)" shelf below. No schema change. (Distinct from trash: archived novels are alive, searchable, and comparable — just shelved.)
+### N.5 ★ Library shelves — Current / Side projects / Stubs / Archived (M)
+Both writers carry a spread: a couple of large works-in-progress, smaller side projects, and a long tail of stubs and old drafts that must not get lost but must not be front and center either. One classifier, freely movable:
+
+- **Values:** `current | side | stub | archived`. Labels: **Current**, **Side projects**, **Stubs**, **Archived**. Semantics are *prominence*, not progress (that's 3.1's status) and not deletion (that's trash — shelved novels stay alive, searchable, comparable, and compilable).
+- **Schema:** `novels.shelf TEXT NOT NULL DEFAULT 'current'` via migration. Zero-schema interim if wanted: the existing `novels.status` column is written (`'draft'`) but read by nothing — it could carry shelf values today; the migration is still the right home because status deserves its own meaning eventually.
+- **Library layout (composes with C.1's owner shelves):** within each owner's section — **Current** as full cards with progress bars (1.4); **Side projects** and **Stubs** as compact rows (title · word count · updated); **Archived** as a collapsed "Archived (23)" disclosure. Continue-writing hero (N.1) sits above it all.
+- **Moving:** card ⋯ menu → "Move to shelf →" (owner or archivist). Instant, reversible, audit-worthy but not audit-required.
+- **Import lands somewhere sensible:** the import dialogs get a target-shelf selector — single import defaults to Current; **batch import defaults to Stubs** (a twenty-draft chaos pile should arrive shelved, not carpet-bomb the library), remembering the last choice. Triage (Tier T) can then graduate the keeper to Current and sweep the rest to Archived.
+- **Search/stats:** search spans all shelves (a stub is often exactly what you're hunting); stats pages get a shelf filter with Current preselected.
 
 ### N.6 Quick-open (M, desktop nicety — do last)
 Ctrl+P fuzzy switcher over doc titles across open novel (or library-wide). Keyboard-first desktop affordance; skip on mobile.
@@ -175,7 +182,13 @@ The request: add characters **with aliases** and see where they appear in the te
 - **Deliberately deferred:** profiles/photos/relationship graphs (Phase 4 spec), and *rename-character-across-manuscript* — writers ask for it and it's a foot-gun; if ever built, it must snapshot first and present a per-occurrence review checklist, never a blind replace.
 
 ### 3.8 Editorial margin notes (M–L) — built for exactly this two-person setup
-Either sister reads the other's draft and leaves notes seen in place: "this version of the ending is stronger," "duplicate of ch. 12?" (Fully reciprocal by design — see C.3; comments carry `user_id` and assume no direction.) A lightweight comments layer: `comments (id, document_id, user_id, anchor_from, anchor_to, body, resolved_at, created_at)` with TipTap marks for the anchor ranges; sidebar list + inline highlight; resolve/unresolve; no threading, no @-mentions, no realtime — it's sisters passing notes, not Google Docs. Positions drift as text changes — anchor via ProseMirror positions mapped through saved steps is overkill here; store text-quote anchors (prefix/exact/suffix) and re-locate on load, flagging orphaned notes rather than guessing.
+Either sister reads the other's draft and leaves notes seen in place: "this version of the ending is stronger," "duplicate of ch. 12?" (Fully reciprocal by design — see C.3; comments carry `user_id` and assume no direction.) A lightweight comments layer: `comments (id, document_id, user_id, anchor_from, anchor_to, body, resolved_at, created_at)` with TipTap marks for the anchor ranges; inline highlight; resolve/unresolve; no threading, no @-mentions, no realtime — it's sisters passing notes, not Google Docs. Positions drift as text changes — anchor via ProseMirror positions mapped through saved steps is overkill here; store text-quote anchors (prefix/exact/suffix) and re-locate on load, flagging orphaned notes rather than guessing.
+
+**Panel & navigation UX (specified):**
+- **Toggle + layout:** a "Notes" toggle (editor footer, beside Snapshots) with an unresolved-count badge. ≥769 px: right-side panel, same pattern and width discipline as SnapshotPanel. ≤768 px: **bottom sheet** splitting the view (~40% viewport height, scrollable), since a right column would crush the prose on a phone.
+- **The list:** comments in **document order** (by re-located anchor position, orphans last). Each card: the anchored text excerpt (quote style), author + relative time, body, Resolve. Tapping a card scrolls the editor to the anchor and flashes it (reuse the existing search-highlight decoration + CSS animation).
+- **Prev/next arrows** in the panel header (‹ 3 of 11 ›): step through comments in document order, syncing the editor scroll/flash and the selected card — built for scan-the-feedback-front-to-back reading. Keyboard on desktop: `Alt+↓/↑`. Filter toggle: Open / All (resolved shown struck).
+- **Cross-document later:** the panel is per-document; a novel-level "all notes" view (grouped by chapter, same prev/next striding across chapters) is a natural follow-on once the per-doc version proves itself.
 
 ### 3.9 Find & replace in a document (S–M)
 Notably absent for a writing app, and cheap: search within the active doc using the same decoration machinery, next/prev, replace/replace-all via ProseMirror transactions (which keeps undo history intact — one Ctrl+Z reverses a replace-all). Case-sensitivity toggle; whole-word toggle. Novel-wide replace is *not* included (see 3.7's foot-gun note) — novel-wide **find** already exists via Ctrl+K.
@@ -194,18 +207,24 @@ Notably absent for a writing app, and cheap: search within the active doc using 
 
 Both users write. The current model can't express that: **there is no ownership** — every authenticated user sees and edits every novel; "writer" and "archivist" are system-wide roles, not per-novel relationships. Reciprocity ("her novels are hers, mine are mine, we mark up each other's") needs one new concept, and the spoiler shield rides on it.
 
-### C.1 Novel ownership (M; needs RP P2-6 migrations) — the keystone
-- **Schema:** `novels.owner_id TEXT REFERENCES users(id)`. Backfill at migration: existing novels → the primary writer's account (or choose per-novel at migration time; there will be ~two humans in the room). Imports and merges set `owner_id` = acting user.
-- **Permission matrix (deliberately simple):**
-  | | Own novel | Someone else's novel |
-  |---|---|---|
-  | Read, search, compile | ✔ | ✔ (this is a shared library between sisters, not tenant isolation) |
-  | Edit content/tree, trash, rename | ✔ | ✖ |
-  | Margin notes (3.8) | ✔ | ✔ — this *is* the collaboration surface |
-  | Snapshots: view | ✔ | ✔ · restore: owner only |
-- **Archivist override:** the archivist role keeps full access for curation duties (triage, merge, trash admin) — but the *reading UI* still respects the spoiler shield (C.2). Owner-only rules are enforced server-side in the mutation endpoints (one `requireOwnerOr403(novel, locals)` helper), not just hidden in the UI.
-- **Library UI:** two shelves — "My novels" / "{name}'s novels" — plus the archive shelf (N.5). No sharing dialogs, no invitations: on a two-person instance, visible-by-default with owner-only editing *is* the sharing model. If a truly private novel is ever wanted, that's a later `private` flag, not the default.
-- **Why this is not confusing:** nothing about the writing experience changes for either user; the only new behavior is that edit controls become read-only + comment on the other person's shelf.
+### C.1 Novel ownership + access levels (M–L; needs RP P2-6 migrations) — the keystone
+Google-Docs-shaped, sized for a family instance: every novel has exactly one owner, and access is a per-person level on top of a friendly default.
+
+- **Schema:**
+  - `novels.owner_id TEXT NOT NULL REFERENCES users(id)` — **the no-orphan invariant**: a work always has exactly one owner. Backfill at migration (there are ~two humans in the room; assign per-novel). Imports and merges set `owner_id` = acting user.
+  - `novel_access (novel_id, user_id, level, granted_by, created_at, PRIMARY KEY (novel_id, user_id))` with `level IN ('view','comment','edit')`.
+  - Effective access = explicit grant, else the instance default (`comment` — preserves the shared-sisters'-library feel; also settable per novel later if wanted). One helper computes it: `accessLevel(db, novel, user)`.
+- **What the levels mean:**
+  | | view | comment | edit | owner |
+  |---|---|---|---|---|
+  | Read, search, compile/export | ✔ | ✔ | ✔ | ✔ |
+  | Margin notes (3.8) | ✖ | ✔ | ✔ | ✔ |
+  | Edit content/tree, rename, doc-level trash/restore, create snapshots | ✖ | ✖ | ✔ | ✔ |
+  | Restore snapshots, toggle spoiler shield, delete novel, manage sharing, transfer ownership | ✖ | ✖ | ✖ | ✔ |
+- **No orphaning, concretely:** ownership moves only by explicit **transfer** (owner or archivist initiates, confirm step, audit-logged; previous owner is auto-granted `edit` so nothing vanishes from their reach). Deleting a user who owns novels is refused with the list of works to transfer first — fold this into the RP P0-3 user-deletion fix so the two rules ship as one.
+- **Spoiler shield interaction:** hidden docs (C.2) are invisible to everyone except the owner — including `edit` grantees. Simple beats granular here.
+- **Archivist override:** the archivist role retains full access for curation (triage, merge, trash admin); the reading UI still honors the spoiler shield. All rules enforced server-side in the mutation endpoints via the one helper — never only hidden in the UI.
+- **UI:** two shelves — "My novels" / "{name}'s novels" — and a small **Sharing…** dialog on the card ⋯ menu: one row per user with a level dropdown, plus the default-access row. At two users this is a two-row dialog; the model doesn't change if a third cousin ever shows up.
 
 ### C.2 ★ Spoiler shield — "hide from collaborators" (S–M; needs C.1)
 For chapters written ahead that the other sister shouldn't see yet:
@@ -264,13 +283,13 @@ Kept out on purpose — each would tax the two real users to serve imaginary one
 |-------|------|--------|-----------|
 | 1 | M.1 sidebar stranding fix, M.2 touch actions, M.4 dvh — with 1.1 rename (same surfaces) | S–M | — |
 | 2 | 1.2 resume last doc + N.1 continue-writing + N.4 tab titles | S | — |
-| 3 | T.1 exact-duplicate report + T.6 provenance + N.5 archive shelf | M | — (unblocks the triage workflow) |
+| 3 | T.1 exact-duplicate report + T.6 provenance + N.5 shelves (interim via unused `status` column; proper column with migrations) | M | — (unblocks the triage workflow) |
 | 4 | 3.3 snapshot diff + T.5 diff guardrails | M | — |
 | 5 | 1.4 progress bars, N.2 recent docs, N.3 next/prev chapter, M.5 tap targets | S each | — |
 | 6 | RP P2-6 migrations scaffold | M | — (unblocks all schema work) |
 | 7 | 2.1 writing_days + backfill | M | migrations |
 | 8 | 2.2 + 2.3 stats pages & heatmap | M–L | 2.1 |
-| 9 | C.1 ownership → C.2 spoiler shield | M → S–M | migrations (do before both users are writing in earnest — backfill is trivial now, awkward later) |
+| 9 | C.1 ownership + access levels → C.2 spoiler shield | M–L → S–M | migrations (do before both users are writing in earnest — backfill is trivial now, awkward later); C.1's no-orphan rule ships with the RP P0-3 user-deletion fix |
 | 10 | 3.8 margin notes (+ C.3 unresolved-count chip) | M–L | C.1 |
 | 11 | 3.7 characters & concordance | M–L | migrations |
 | 12 | 3.1 status labels → 3.2 inspector (+ W.2 doc notes field) | M each | migrations |
