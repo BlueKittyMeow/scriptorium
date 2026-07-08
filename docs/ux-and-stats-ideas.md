@@ -168,14 +168,14 @@ Zip of the novel: assembled HTML + per-doc files + snapshots (use a small zip li
 ### 3.7 ★ Characters & concordance (M–L; needs migrations) — Phase 4 pull-forward, concordance-first
 The request: add characters **with aliases** and see where they appear in the text. The design principle that keeps it light: **detection, not tagging** — the writer never annotates anything; mentions are found from the text.
 
-- **Schema:** `characters (id, novel_id, name, notes, created_at, updated_at, deleted_at)` + `character_aliases (id, character_id, alias)`. `novel_id` nullable later for cross-novel/world scope (spec Phase 4); start novel-scoped.
+- **Schema:** `characters (id, novel_id, name, notes, created_at, updated_at, deleted_at)` + `character_aliases (id, character_id, alias)`. `novel_id` nullable later for cross-novel/world scope — W.4 specifies that upgrade; start novel-scoped.
 - **Detection:** for each name/alias, doc-level hits via the existing FTS index (phrase query, handles multi-word names), then exact per-doc counts with a case-insensitive word-boundary scan of the plaintext. No stored occurrence table — computed on view, cached in memory per request. Aliases make this robust to "Bob / Bobby / Robert"; overlapping aliases across characters get flagged in the UI rather than guessed at.
 - **UI:** a Characters panel per novel: list with mention totals; click one → occurrences grouped by chapter with `snippet()`-style context; **a mentions-per-chapter bar strip** — effectively a character screen-time chart across the book (and across *drafts*, which turns this into a triage tool too: "which draft still has the Mira subplot?").
 - **Editor tie-in (S add-on):** a "highlight character mentions" toggle reusing the existing ProseMirror decoration plugin from search-highlight — pick a character, see them glow through the chapter.
 - **Deliberately deferred:** profiles/photos/relationship graphs (Phase 4 spec), and *rename-character-across-manuscript* — writers ask for it and it's a foot-gun; if ever built, it must snapshot first and present a per-occurrence review checklist, never a blind replace.
 
 ### 3.8 Editorial margin notes (M–L) — built for exactly this two-person setup
-The archivist reads drafts and needs to leave notes the writer sees in place: "this version of the ending is stronger," "duplicate of ch. 12?" A lightweight comments layer: `comments (id, document_id, user_id, anchor_from, anchor_to, body, resolved_at, created_at)` with TipTap marks for the anchor ranges; sidebar list + inline highlight; resolve/unresolve; no threading, no @-mentions, no realtime — it's sisters passing notes, not Google Docs. Positions drift as text changes — anchor via ProseMirror positions mapped through saved steps is overkill here; store text-quote anchors (prefix/exact/suffix) and re-locate on load, flagging orphaned notes rather than guessing.
+Either sister reads the other's draft and leaves notes seen in place: "this version of the ending is stronger," "duplicate of ch. 12?" (Fully reciprocal by design — see C.3; comments carry `user_id` and assume no direction.) A lightweight comments layer: `comments (id, document_id, user_id, anchor_from, anchor_to, body, resolved_at, created_at)` with TipTap marks for the anchor ranges; sidebar list + inline highlight; resolve/unresolve; no threading, no @-mentions, no realtime — it's sisters passing notes, not Google Docs. Positions drift as text changes — anchor via ProseMirror positions mapped through saved steps is overkill here; store text-quote anchors (prefix/exact/suffix) and re-locate on load, flagging orphaned notes rather than guessing.
 
 ### 3.9 Find & replace in a document (S–M)
 Notably absent for a writing app, and cheap: search within the active doc using the same decoration machinery, next/prev, replace/replace-all via ProseMirror transactions (which keeps undo history intact — one Ctrl+Z reverses a replace-all). Case-sensitivity toggle; whole-word toggle. Novel-wide replace is *not* included (see 3.7's foot-gun note) — novel-wide **find** already exists via Ctrl+K.
@@ -190,7 +190,62 @@ Notably absent for a writing app, and cheap: search within the active doc using 
 - **Empty states:** first-novel and first-document screens should teach ("Create your first chapter — everything autosaves, and snapshots keep history"). Costs a paragraph, saves an onboarding call.
 - **Word-count badge** hides at 0 via `{#if node.word_count}` — falsy trap; show "0" or an em-dash for empty docs so they're visibly empty.
 
-## What we're deliberately NOT adding
+## Tier C — Ownership & reciprocal collaboration
+
+Both users write. The current model can't express that: **there is no ownership** — every authenticated user sees and edits every novel; "writer" and "archivist" are system-wide roles, not per-novel relationships. Reciprocity ("her novels are hers, mine are mine, we mark up each other's") needs one new concept, and the spoiler shield rides on it.
+
+### C.1 Novel ownership (M; needs RP P2-6 migrations) — the keystone
+- **Schema:** `novels.owner_id TEXT REFERENCES users(id)`. Backfill at migration: existing novels → the primary writer's account (or choose per-novel at migration time; there will be ~two humans in the room). Imports and merges set `owner_id` = acting user.
+- **Permission matrix (deliberately simple):**
+  | | Own novel | Someone else's novel |
+  |---|---|---|
+  | Read, search, compile | ✔ | ✔ (this is a shared library between sisters, not tenant isolation) |
+  | Edit content/tree, trash, rename | ✔ | ✖ |
+  | Margin notes (3.8) | ✔ | ✔ — this *is* the collaboration surface |
+  | Snapshots: view | ✔ | ✔ · restore: owner only |
+- **Archivist override:** the archivist role keeps full access for curation duties (triage, merge, trash admin) — but the *reading UI* still respects the spoiler shield (C.2). Owner-only rules are enforced server-side in the mutation endpoints (one `requireOwnerOr403(novel, locals)` helper), not just hidden in the UI.
+- **Library UI:** two shelves — "My novels" / "{name}'s novels" — plus the archive shelf (N.5). No sharing dialogs, no invitations: on a two-person instance, visible-by-default with owner-only editing *is* the sharing model. If a truly private novel is ever wanted, that's a later `private` flag, not the default.
+- **Why this is not confusing:** nothing about the writing experience changes for either user; the only new behavior is that edit controls become read-only + comment on the other person's shelf.
+
+### C.2 ★ Spoiler shield — "hide from collaborators" (S–M; needs C.1)
+For chapters written ahead that the other sister shouldn't see yet:
+- **Schema:** `documents.hidden INTEGER DEFAULT 0` (rides in the C.1 migration).
+- **Behavior for non-owners:** hidden docs are excluded from the tree response, search results, compile *preview* (server-side filters — not CSS), the characters concordance (3.7), and stats detail views (they may still count in aggregate word counts, or the totals leak "she wrote 8k words somewhere" — acceptable; pick and document one behavior).
+- **Owner UI:** toggle in the tree ⋯ menu and inspector; visible badge (🕶 or "hidden") in the owner's binder; "hide all in this folder" convenience action that sets the flag on descendants (explicit set, not inheritance — inheritance rules are where toggles get confusing).
+- **Honesty note, by design:** this is *spoiler etiquette, not security*. The archivist runs the server and the backups; a determined admin can read anything. The feature's contract is "the app won't show it to you," which between sisters is exactly the right strength. The reading UI honors it even for the archivist so nobody trips over an ending by accident.
+
+### C.3 Margin notes are already reciprocal (no extra work)
+3.8's design carries `user_id` per comment and never assumes direction. With C.1 in place, the complete loop is: either sister opens the other's chapter (read-only), selects a passage, leaves a note; the owner sees it inline + in the comments sidebar and resolves it. The only C.1-aware addition: a small "unresolved notes" count on library cards, so "she left me feedback" is discoverable without a notification system.
+
+---
+
+## Tier W — Notes & shared universes (the Cosmere problem)
+
+One writer works across multiple novels in one universe, in different eras. What exists today: `folder_type` already supports `research`/`notes` folders (the Scrivener importer even sets them), and `compile_include=0` keeps any doc out of exports — so **novel-internal note documents work right now**, just without ceremony. What's missing is within-document notes, and anything that crosses novels.
+
+### W.1 Inline author notes (M) — notes *within* the prose
+Scrivener's inline annotations: a visually distinct note span inside the text ("FIX THIS", "did she know about the vault yet?"). TipTap custom mark `authorNote` (amber background, dotted underline, toolbar button + shortcut):
+- **Compile must strip them** — in `assembleCompileHtml`, remove `<span data-author-note>` elements before assembly (server-side, so every format inherits it). Test: compiled docx of a doc with notes contains no note text.
+- **Word count should exclude them** (extend `stripHtml`/count path) so targets track story words.
+- **Search should find them** (they're often exactly what you're looking for) — index normally, and add a "notes only" search filter chip later.
+- Import tie-in: spec Phase 1's "richer RTF edge cases" lists Scrivener annotations/footnotes — once this mark exists, imported annotations finally have somewhere to land.
+
+### W.2 Document notes field (S; folds into inspector 3.2)
+`documents.synopsis` exists; add sibling `documents.notes TEXT` (migration) for the per-chapter scratch pad — "era: Vashek 3rd dynasty, 12 yrs before Novel B" — shown in the inspector, searchable, never compiled. Cheap, and it's where era tagging lives until W.4 formalizes it.
+
+### W.3 Universe codex, cheap version (S — works with today's schema)
+A regular novel used as the codex ("Cosmere Bible"): folders per topic (Places, Magic, Timeline, Eras), note docs inside, `compile_include` off. Everything already works: search spans novels, compare can diff codex versions, snapshots preserve lore history. Two small assists make it pleasant: N.2's recent-docs (hop back to the codex fast) and a "pin novel" flag so the codex sits atop the library. **Recommend starting here** — it costs an afternoon of writing, not code, and teaches us what W.4 actually needs.
+
+### W.4 Worlds, for real (L; Phase 4 shape — needs migrations)
+When the codex-novel chafes, formalize: `worlds (id, name, notes)` + `novels.world_id` + optional `novels.era_label` and `novels.timeline_order` (a sortable number — eras are rarely datable, always orderable). Then:
+- Library groups by world; world page lists novels in timeline order with era labels.
+- **Characters upgrade (3.7 → world scope):** `characters.world_id` replaces novel scoping; one "Kelsier" entry, concordance across every novel in the world, per-novel mention breakdown — "which books does she appear in" answered by the data. This is the single biggest payoff of formal worlds.
+- World-level codex shelf: note docs attached to the world rather than any novel (or just adopt the W.3 codex novel as the world's designated codex — less new UI).
+
+### W.5 Wiki-style cross-links (L; after 3.7/W.4 — the deep-lore feature)
+`[[…]]` autocompletes to a link targeting a document or a character; rendered as a styled link that navigates (doc) or opens the concordance (character); **backlinks** listed in the inspector ("referenced by: Novel B ch. 4, Codex › Magic"). Store links in a `doc_links` table maintained on save (parse the HTML for link marks) so backlinks are a query, not a scan. This is genuinely L-effort and genuinely the Cosmere-keeper feature — sequence it after characters exist so links have worthwhile targets.
+
+
 
 Kept out on purpose — each would tax the two real users to serve imaginary ones:
 
@@ -215,10 +270,14 @@ Kept out on purpose — each would tax the two real users to serve imaginary one
 | 6 | RP P2-6 migrations scaffold | M | — (unblocks all schema work) |
 | 7 | 2.1 writing_days + backfill | M | migrations |
 | 8 | 2.2 + 2.3 stats pages & heatmap | M–L | 2.1 |
-| 9 | 3.7 characters & concordance | M–L | migrations |
-| 10 | 3.1 status labels → 3.2 inspector | M each | migrations |
-| 11 | T.4 persisted comparisons → T.2 clustering → T.3 alignment cockpit | M→L→L | migrations; T.1 |
-| 12 | 1.5 draft rescue, 1.6 PWA, 3.4 focus mode, 3.9 find & replace | S–M | — |
-| 13 | 3.5 docx import, 3.6 download-my-novel, 3.8 margin notes, 2.4 sprints, N.6 quick-open | M | — |
+| 9 | C.1 ownership → C.2 spoiler shield | M → S–M | migrations (do before both users are writing in earnest — backfill is trivial now, awkward later) |
+| 10 | 3.8 margin notes (+ C.3 unresolved-count chip) | M–L | C.1 |
+| 11 | 3.7 characters & concordance | M–L | migrations |
+| 12 | 3.1 status labels → 3.2 inspector (+ W.2 doc notes field) | M each | migrations |
+| 13 | W.3 codex novel (writing, not code) · W.1 inline author notes | S · M | — |
+| 14 | T.4 persisted comparisons → T.2 clustering → T.3 alignment cockpit | M→L→L | migrations; T.1 |
+| 15 | 1.5 draft rescue, 1.6 PWA, 3.4 focus mode, 3.9 find & replace | S–M | — |
+| 16 | 3.5 docx import, 3.6 download-my-novel, 2.4 sprints, N.6 quick-open | M | — |
+| 17 | W.4 worlds/eras → W.5 wiki links & backlinks | L → L | migrations; 3.7 |
 
 Everything above stays true to the house style: single Node process, SQLite, no client framework additions, no charting libraries, warm theme via existing CSS variables.
