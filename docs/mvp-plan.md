@@ -115,6 +115,16 @@ Per-user Drive backup is Phase 3; MVP ships a server-side backup owned by the ar
 4. **Restore drill is part of the definition of done:** on the workstation, pull yesterday's backup, point a dev server's `DATA_ROOT` at it, confirm a novel opens with content and snapshots intact. A backup that's never been restored is a hope, not a backup.
 5. Backup dir lives on the NVMe (`/mnt/media/scriptorium/backups`) — never `/tmp` (4 GB tmpfs, house rule).
 
+## Workstream 7 — Phone-ready pass
+
+The writer's primary device is a phone, which promotes three items from [ux-and-stats-ideas.md](ux-and-stats-ideas.md) Tier M to launch-gating (full specs there):
+
+- **M.1** — collapsing the sidebar on mobile strands the user (the only toggle slides off-screen with it). Verified in code; must fix.
+- **M.2** — add/trash (and any future rename) actions are hover-revealed, so unreachable on touch. Nothing load-bearing behind hover at `pointer: coarse`.
+- **M.4** — `100vh` → `100dvh` + viewport meta so the on-screen keyboard doesn't swallow the toolbar/footer.
+
+Drag-and-drop reorder remains desktop-only at launch (documented limitation; the Move… dialog is a fast-follow, Tier M.3).
+
 ## Launch checklist (acceptance)
 
 - [ ] `npm run check` and `npm test` green on `mvp` branch
@@ -124,6 +134,7 @@ Per-user Drive backup is Phase 3; MVP ships a server-side backup owned by the ar
 - [ ] HTTPS URL reachable from a phone off-WiFi (cellular)
 - [ ] Archivist + writer accounts exist; setup page now returns 403-equivalent (redirects to login)
 - [ ] Writer can: log in, create novel, write, see snapshots, search, export docx — from her own laptop
+- [ ] **Phone pass** (real device, iOS Safari and/or Android Chrome): log in → open novel → collapse *and reopen* binder → create doc → write a paragraph with the keyboard up (toolbar/footer visible) → trash and restore a doc via touch
 - [ ] Writer can change her own password (M4)
 - [ ] Nightly backup ran at least once; restore drill performed
 - [ ] Kyla's existing projects imported and spot-checked (if applicable)
@@ -131,9 +142,10 @@ Per-user Drive backup is Phase 3; MVP ships a server-side backup owned by the ar
 ## Suggested sequence
 
 1. **W1** fixes with tests (the bulk of the coding) → merge-worthy on their own; merge `mvp` → `main` at the end regardless.
-2. **W2 + W3** in one sitting (server install → service → tunnel → smoke test).
-3. **W4** accounts + M4/M5.
-4. **W6** backups + restore drill.
-5. **W5** import, then hand Kyla the URL.
+2. **W7** phone-ready pass (M.1/M.2/M.4) — before deployment so the phone acceptance test can pass.
+3. **W2 + W3** in one sitting (server install → service → tunnel → smoke test).
+4. **W4** accounts + M4/M5.
+5. **W6** backups + restore drill.
+6. **W5** import, then hand the writer the URL.
 
 Post-launch fast-follows, in order: RP P1-7/P1-8, P3-6 (origin check), P2-6 (migrations scaffold — unblocks the rest), P3-1/P3-2 (snapshot thinning/dedup), P3-3 (reindex button).
