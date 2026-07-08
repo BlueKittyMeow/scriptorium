@@ -31,7 +31,6 @@ Server runs at **http://localhost:5173/**. On first visit you'll be redirected t
 ## Data
 
 All data lives in `./data/` (configurable via `DATA_ROOT` env var):
+- `data/scriptorium.db` -- SQLite database (created automatically on first run)
 - `data/{novelId}/docs/{docId}.html` -- document content
-- `data/{novelId}/snapshots/{docId}/{timestamp}.html` -- version snapshots
-
-SQLite database at `./scriptorium.db` (created automatically on first run).
+- `data/{novelId}/snapshots/{docId}/{snapshotId}.html` -- version snapshots
