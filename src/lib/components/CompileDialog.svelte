@@ -169,7 +169,7 @@
 
 			<!-- Document checklist -->
 			<div class="form-group">
-				<label>Include in compilation</label>
+				<span class="form-group-label">Include in compilation</span>
 				<div class="doc-checklist">
 					{#each flatDocs as entry}
 						{#if entry.kind === 'document'}
@@ -258,7 +258,8 @@
 		margin-bottom: 1rem;
 	}
 
-	.form-group > label {
+	.form-group > label,
+	.form-group-label {
 		display: block;
 		font-size: 0.8rem;
 		font-weight: 500;

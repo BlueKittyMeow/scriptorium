@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { TreeNode } from '$lib/types.js';
 import { requireUser } from '$lib/server/auth.js';
+import { assertValidParentFolder, chainContainsNode } from '$lib/server/validate.js';
 
 // GET /api/novels/:id/tree — full binder tree
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -62,7 +63,32 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const { node_id, node_type, new_parent_id, new_sort_order } = body;
 	const now = new Date().toISOString();
 
+	// 1. node_type / new_sort_order shape
+	if (
+		(node_type !== 'folder' && node_type !== 'document') ||
+		typeof new_sort_order !== 'number' ||
+		!Number.isFinite(new_sort_order)
+	) {
+		throw error(400, 'node_type must be "folder" or "document" and new_sort_order must be a finite number');
+	}
+
 	const table = node_type === 'folder' ? 'folders' : 'documents';
+
+	// 2. Node must exist, non-deleted, in this novel
+	const node = locals.db
+		.prepare(`SELECT id FROM ${table} WHERE id = ? AND novel_id = ? AND deleted_at IS NULL`)
+		.get(node_id, params.id) as { id: string } | undefined;
+	if (!node) throw error(404, 'Node not found');
+
+	// 3. new_parent_id, if set, must be an existing non-deleted folder in this novel
+	if (new_parent_id) {
+		assertValidParentFolder(locals.db, params.id, new_parent_id);
+
+		// 4. Folders can't be moved into their own descendant (cycle)
+		if (node_type === 'folder' && chainContainsNode(locals.db, params.id, new_parent_id, node_id)) {
+			throw error(400, 'Cannot move a folder into its own descendant');
+		}
+	}
 
 	locals.db.prepare(`
 		UPDATE ${table} SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ? AND novel_id = ?

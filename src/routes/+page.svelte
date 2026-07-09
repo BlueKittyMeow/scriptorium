@@ -11,7 +11,7 @@
 	// Import modal state machine
 	type ImportMode = 'idle' | 'scanning' | 'project_list' | 'importing_single' | 'importing_batch' | 'report_single' | 'report_batch';
 	let showImportModal = $state(false);
-	let importMode: ImportMode = $state('idle');
+	let importMode = $state<ImportMode>('idle');
 	let importPath = $state('');
 	let importError: string | null = $state(null);
 

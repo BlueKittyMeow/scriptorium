@@ -58,7 +58,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	// Sanitize filename
 	const safeTitle = novel.title.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-	return new Response(result.buffer, {
+	return new Response(new Uint8Array(result.buffer), {
 		headers: {
 			'Content-Type': result.mimeType,
 			'Content-Disposition': `attachment; filename="${safeTitle}.${config.extension}"`

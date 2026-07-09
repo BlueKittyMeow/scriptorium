@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { readContentFile, writeContentFile, writeSnapshotFile, stripHtml, countWords } from '$lib/server/files.js';
 import { requireUser } from '$lib/server/auth.js';
+import { assertValidDocumentContent, normalizeOptionalString } from '$lib/server/validate.js';
 
 // GET /api/documents/:id — metadata + content
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -23,7 +24,15 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
-	const html = body.content ?? '';
+	// Non-string content is rejected; oversized content is rejected (413).
+	const html = assertValidDocumentContent(body.content);
+
+	// Blank strings must NOT blank an existing title/synopsis — only apply
+	// when a real (trimmed, non-empty) value was sent, otherwise pass null
+	// so COALESCE keeps the current value.
+	const title = normalizeOptionalString(body.title);
+	const synopsis = normalizeOptionalString(body.synopsis);
+
 	const plainText = stripHtml(html);
 	const wordCount = countWords(plainText);
 
@@ -40,7 +49,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 				synopsis = COALESCE(?, synopsis),
 				updated_at = ?
 			WHERE id = ?
-		`).run(wordCount, body.title, body.synopsis, now, params.id);
+		`).run(wordCount, title, synopsis, now, params.id);
 
 		// Snapshot if >2 min since last — re-read inside transaction to prevent duplicates
 		const fresh = locals.db.prepare('SELECT last_snapshot_at FROM documents WHERE id = ?').get(params.id) as any;
@@ -64,7 +73,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		locals.db.prepare('DELETE FROM documents_fts WHERE doc_id = ?').run(doc.id);
 		locals.db.prepare('INSERT INTO documents_fts (doc_id, title, content) VALUES (?, ?, ?)').run(
 			doc.id,
-			body.title || doc.title,
+			title || doc.title,
 			plainText
 		);
 	});
