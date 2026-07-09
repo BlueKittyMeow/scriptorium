@@ -21,7 +21,7 @@
 		docId: string;
 		initialContent: string;
 		title: string;
-		onsave: (content: string) => Promise<void>;
+		onsave: (content: string, docId: string) => Promise<void>;
 		searchTerm?: string | null;
 		onSearchHighlightDone?: () => void;
 		onSnapshotsToggle?: () => void;
@@ -93,9 +93,12 @@
 
 	async function triggerSave() {
 		if (!editor || !onsave) return;
+		// Capture the target doc id BEFORE any await — the content in the editor
+		// belongs to currentDocId, which may change if the user switches docs mid-save.
+		const target = currentDocId;
 		saveStatus = 'saving';
 		try {
-			await onsave(editor.getHTML());
+			await onsave(editor.getHTML(), target);
 			saveStatus = 'saved';
 		} catch {
 			saveStatus = 'unsaved';
@@ -182,10 +185,13 @@
 	});
 
 	async function switchDocument(newDocId: string) {
+		// Always cancel any pending debounced save so it can't fire against the new doc.
+		clearTimeout(saveTimeout);
 		if (currentDocId && saveStatus === 'unsaved' && editor) {
-			clearTimeout(saveTimeout);
+			// Capture the outgoing doc id BEFORE the await — the editor still holds its content.
+			const target = currentDocId;
 			try {
-				await onsave(editor.getHTML());
+				await onsave(editor.getHTML(), target);
 			} catch { /* best effort */ }
 		}
 		if (!editor) return;

@@ -23,7 +23,7 @@
 	let searchResults: any[] = $state([]);
 	let showSearch = $state(false);
 	let searchTimeout: any = $state(null);
-	let searchInputEl: HTMLInputElement;
+	let searchInputEl = $state<HTMLInputElement | undefined>(undefined);
 	let pendingSearchTerm: string | null = $state(null);
 
 	// Snapshot state
@@ -47,7 +47,7 @@
 	let draggedNode: TreeNode | null = $state(null);
 	let dropTarget: { nodeId: string; position: 'before' | 'after' | 'inside' } | null = $state(null);
 
-	const novelId = $derived($page.params.id);
+	const novelId = $derived($page.params.id!);
 	const trashedItems = $derived(collectTrashed(tree));
 
 	onMount(async () => {
@@ -85,20 +85,26 @@
 
 	async function selectDocument(docId: string) {
 		activeDocId = docId;
+		// On mobile, the sidebar is a full-screen overlay — close it so the editor is visible.
+		if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+			sidebarOpen = false;
+		}
 		const res = await fetch(`/api/documents/${docId}`);
 		activeDoc = await res.json();
 	}
 
-	async function saveDocument(content: string) {
-		if (!activeDocId) return;
-		const res = await fetch(`/api/documents/${activeDocId}`, {
+	async function saveDocument(content: string, docId: string) {
+		if (!docId) return;
+		const res = await fetch(`/api/documents/${docId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ content })
 		});
+		// Surface HTTP failures so the Editor's catch flips status back to 'unsaved'.
+		if (!res.ok) throw new Error(`Save failed: ${res.status}`);
 		const updated = await res.json();
-		// Update word count in tree
-		updateTreeNodeWordCount(tree, activeDocId, updated.word_count);
+		// Update word count in tree for the doc the content belongs to, not activeDocId.
+		updateTreeNodeWordCount(tree, docId, updated.word_count);
 		tree = [...tree]; // trigger reactivity
 	}
 
@@ -560,8 +566,18 @@
 		{/if}
 	</aside>
 
+	<!-- Mobile backdrop — tap to close the sidebar overlay -->
+	{#if sidebarOpen}
+		<button class="sidebar-backdrop" onclick={() => sidebarOpen = false} aria-label="Close binder"></button>
+	{/if}
+
 	<!-- Main content -->
 	<main class="editor-area">
+		<!-- Mobile-only binder reopen — the in-sidebar toggle slides off-screen when collapsed -->
+		{#if !sidebarOpen}
+			<button class="binder-reopen" onclick={() => sidebarOpen = true} aria-label="Open binder" title="Open binder">☰</button>
+		{/if}
+
 		{#if activeDoc}
 			<!-- Live editor — hidden during preview, never destroyed -->
 			<div class="editor-wrapper" class:hidden={!!previewingSnapshot}>
@@ -716,6 +732,17 @@
 	.workspace {
 		display: flex;
 		height: 100vh;
+		height: 100dvh; /* dynamic viewport unit — avoids mobile URL-bar/keyboard overlap */
+	}
+
+	/* Mobile-only binder reopen button (hidden on desktop, which keeps a rail toggle) */
+	.binder-reopen {
+		display: none;
+	}
+
+	/* Mobile-only backdrop behind the open sidebar overlay */
+	.sidebar-backdrop {
+		display: none;
 	}
 
 	/* Sidebar */
@@ -1014,6 +1041,13 @@
 		display: flex;
 	}
 
+	/* Touch devices have no hover — reveal load-bearing row actions permanently */
+	@media (pointer: coarse) {
+		.tree-item .node-actions {
+			display: flex;
+		}
+	}
+
 	.btn-tiny {
 		background: none;
 		border: none;
@@ -1175,6 +1209,36 @@
 
 		.editor-area {
 			width: 100%;
+			position: relative;
+		}
+
+		.sidebar-backdrop {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 45;
+			background: var(--bg-overlay);
+			border: none;
+			cursor: pointer;
+		}
+
+		.binder-reopen {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: fixed;
+			top: 0.5rem;
+			left: 0.5rem;
+			z-index: 40;
+			width: 2.25rem;
+			height: 2.25rem;
+			background: var(--bg-surface);
+			border: 1px solid var(--border-input);
+			border-radius: 6px;
+			font-size: 1rem;
+			color: var(--accent);
+			cursor: pointer;
+			box-shadow: 0 2px 8px var(--shadow-lg);
 		}
 	}
 </style>
