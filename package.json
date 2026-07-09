@@ -18,6 +18,8 @@
 		"@sveltejs/kit": "^2.50.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@types/bcryptjs": "^2.4.6",
+		"@types/better-sqlite3": "^7.6.13",
+		"@types/node": "^26.1.1",
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.3.6",
 		"typescript": "^5.9.3",
