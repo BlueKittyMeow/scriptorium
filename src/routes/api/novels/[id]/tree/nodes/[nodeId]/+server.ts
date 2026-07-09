@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { cascadeDeleteChildren, restoreChildFts, reindexDocFts } from '$lib/server/tree-ops.js';
+import { cascadeDeleteChildren, restoreChildFts, reindexDocFts, hasBrokenAncestorChain } from '$lib/server/tree-ops.js';
 import { requireUser } from '$lib/server/auth.js';
 
 // DELETE /api/novels/:id/tree/nodes/:nodeId — soft-delete
@@ -42,15 +42,27 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		const { readContentFile, stripHtml } = await import('$lib/server/files.js');
 
 		if (nodeType === 'folder') {
+			const folder = locals.db
+				.prepare('SELECT id, parent_id FROM folders WHERE id = ? AND novel_id = ?')
+				.get(params.nodeId, params.id) as { id: string; parent_id: string | null } | undefined;
 			locals.db.prepare('UPDATE folders SET deleted_at = NULL, updated_at = ? WHERE id = ? AND novel_id = ?')
 				.run(now, params.nodeId, params.id);
 			restoreChildFts(locals.db, params.nodeId, now, readContentFile, stripHtml);
+			// Re-root if an ancestor folder is still trashed/missing, so the
+			// restored node doesn't become unreachable in the binder.
+			if (folder && hasBrokenAncestorChain(locals.db, folder.parent_id)) {
+				locals.db.prepare('UPDATE folders SET parent_id = NULL, updated_at = ? WHERE id = ?').run(now, params.nodeId);
+			}
 		} else {
 			const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ?').get(params.nodeId) as any;
 			locals.db.prepare('UPDATE documents SET deleted_at = NULL, updated_at = ? WHERE id = ? AND novel_id = ?')
 				.run(now, params.nodeId, params.id);
 			if (doc) {
 				reindexDocFts(locals.db, doc, readContentFile, stripHtml);
+				// Re-root if an ancestor folder is still trashed/missing.
+				if (hasBrokenAncestorChain(locals.db, doc.parent_id)) {
+					locals.db.prepare('UPDATE documents SET parent_id = NULL, updated_at = ? WHERE id = ?').run(now, params.nodeId);
+				}
 			}
 		}
 		return json({ success: true });

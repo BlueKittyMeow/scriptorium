@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireArchivist, hashPassword, destroyUserSessions } from '$lib/server/auth.js';
+import { logAction } from '$lib/server/audit.js';
 
 // PATCH /api/admin/users/:userId — update user (password, role)
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
@@ -93,8 +94,8 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 	}
 
 	const user = locals.db
-		.prepare('SELECT id, role FROM users WHERE id = ?')
-		.get(userId) as { id: string; role: string } | undefined;
+		.prepare('SELECT id, username, role FROM users WHERE id = ?')
+		.get(userId) as { id: string; username: string; role: string } | undefined;
 
 	if (!user) {
 		throw error(404, 'User not found');
@@ -112,6 +113,12 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 	}
 
 	locals.db.transaction(() => {
+		// Record the deletion (from the acting archivist) before removing the user.
+		logAction(locals.db, locals.user!.id, 'user.delete', 'user', userId, `Deleted "${user.username}"`);
+		// audit_log.user_id REFERENCES users(id) with no ON DELETE action, so the
+		// deleted user's own audit rows would fail the FK. Detach them (NULL user_id
+		// renders fine — the audit GET LEFT JOINs users) instead of losing history.
+		locals.db.prepare('UPDATE audit_log SET user_id = NULL WHERE user_id = ?').run(userId);
 		destroyUserSessions(locals.db, userId);
 		locals.db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 	})();
