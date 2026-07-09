@@ -148,7 +148,7 @@ Triage across twenty drafts won't finish in one sitting. Persist a `comparisons`
 `diffWords` degrades badly on long, heavily-divergent chapters (worst cases: seconds to minutes, blocking the event loop server-side). Two cheap guards: paragraph-level diff first, word-level only within changed paragraphs (classic two-phase); and a size gate (plaintexts > ~150 KB get paragraph-level only, with a "large document — coarse diff" note). Do this before T.3 invites bulk diffing.
 
 ### T.6 Import provenance (S)
-When twenty near-identical novels arrive, "which file did this come from?" matters. Batch import already knows the source path — record it (audit log `details` today; a `novels.source_path` column once migrations exist) and show it in the library card tooltip / triage views. Also stamp `Imported {date} from {basename}` into the novel subtitle at import time as a zero-schema interim.
+When twenty near-identical novels arrive, "which file did this come from?" matters. Batch import already knows the source path — record it (audit log `details` today; a `novels.source_path` column once migrations exist) and show it in the library card tooltip / triage views. (An earlier draft of this idea suggested stamping provenance into the novel *subtitle* — don't: subtitles print on compiled title pages, per RP P1-10.)
 
 ---
 
@@ -213,7 +213,7 @@ Google-Docs-shaped, sized for a family instance: every novel has exactly one own
 - **Schema:**
   - `novels.owner_id TEXT NOT NULL REFERENCES users(id)` — **the no-orphan invariant**: a work always has exactly one owner. Backfill at migration (there are ~two humans in the room; assign per-novel). Imports and merges set `owner_id` = acting user.
   - `novel_access (novel_id, user_id, level, granted_by, created_at, PRIMARY KEY (novel_id, user_id))` with `level IN ('view','comment','edit')`.
-  - Effective access = explicit grant, else the instance default (`comment` — preserves the shared-sisters'-library feel; also settable per novel later if wanted). One helper computes it: `accessLevel(db, novel, user)`.
+  - Effective access = explicit grant, else the instance default. **The codified default: the creator owns what they create; every other user gets `comment`.** Levels are a ladder (`view ⊂ comment ⊂ edit`), so commenters can always read — the owner then toggles any person up to `edit` or down to `view` per novel. One helper computes it: `accessLevel(db, novel, user)`.
 - **What the levels mean:**
   | | view | comment | edit | owner |
   |---|---|---|---|---|

@@ -165,6 +165,34 @@ DB inserts happen incrementally across `await` points (RTF conversion), so a pro
 
 **Verify:** Existing import tests keep passing; add one that injects a throwing reader mid-walk and asserts zero rows *and* no `data/{novelId}` directory remain.
 
+### P1-9. Scrivener import: XML value coercion mangles or breaks titles [verified]
+
+**File:** [src/lib/server/import/scriv.ts](../src/lib/server/import/scriv.ts) (XMLParser options, ~line 89)
+
+fast-xml-parser's default `parseTagValue: true` coerces tag text to JS primitives. Reproduced with the app's exact parser options:
+- `<Title>42</Title>` → number `42`. For a **folder**, `title.toLowerCase()` then throws `.toLowerCase is not a function` — the entire import aborts (rolls back).
+- `<Title>3.10</Title>` → number `3.1` — a chapter titled "3.10" is **silently renamed** "3.1".
+- `<Title>true</Title>` → boolean; a chapter titled "false" collapses to `'(untitled)'` via the `||` fallback.
+
+**Fix:** pass `parseTagValue: false` to the XMLParser (attribute parsing is already off by default), and defensively coerce `String(item.Title ?? '')` where titles are read (also the Label/Status `#text` maps). While in the file, harden `extractBodyContent`'s regex to `<body[^>]*>` — the current exact-match works with today's @iarna/rtf-to-html output (verified) but breaks the moment the library emits an attribute.
+
+**Verify:** fixture .scrivx with binder titles `42` (folder), `3.10`, `true`, empty; assert all import verbatim (empty → `(untitled)`), no abort.
+
+### P1-10. Compile title pages stack up to three deep on imported novels [verified for (1); (3) high-confidence]
+
+**Files:** [scriv.ts](../src/lib/server/import/scriv.ts), [compile/assemble.ts](../src/lib/server/compile/assemble.ts), [compile/pandoc.ts](../src/lib/server/compile/pandoc.ts)
+
+Three title-page sources collide:
+1. **Scrivener front matter imports as ordinary chapters** — verified in `test-data`: Front Matter contains "Title Page" docs whose text is raw placeholders (`<$PROJECTTITLE>`, `<$fullname>`, `<$author>`, `<$year>`, `<$BLANK_PAGE>`) and carries `IncludeInCompile=Yes`. Compiled output opens with placeholder gibberish as chapter one.
+2. `assembleCompileHtml` always prepends its own generated title page.
+3. `buildPandocArgs` passes `--standalone --metadata=title:… --metadata=subtitle:…`, which makes pandoc's docx/epub writers emit **their own** title block on top. (Documented pandoc behavior; not executable on this workstation — pandoc absent — verify on a pandoc machine during compile QA.)
+
+**Fix:**
+- Import: for docs under a folder titled "Front Matter" (any depth, case-insensitive), set `compile_include = 0` and add a report warning ("front matter excluded from compile — review"); optionally translate known placeholders (`<$PROJECTTITLE>` → project name, `<$year>` → import year) instead of importing them literally.
+- Compile: per-format metadata policy — **docx/markdown/pdf**: keep the generated HTML title page, drop the `--metadata` title/subtitle args (they exist only to feed the writers' title blocks). **epub**: keep `--metadata=title` (the OPF package requires it) and instead omit the generated HTML title-page div for that format.
+
+**Verify:** compile test asserting markdown output contains the title exactly once; import test asserting front-matter docs land with `compile_include = 0`; manual docx/epub check on the deployment box once pandoc exists there.
+
 ---
 
 ## P2 — Hygiene, robustness, DX
