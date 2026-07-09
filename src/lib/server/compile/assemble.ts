@@ -5,6 +5,23 @@ export interface AssembleResult {
 	warnings: string[];
 }
 
+export interface AssembleOptions {
+	/**
+	 * Whether to include the generated HTML title-page div. Defaults to true.
+	 *
+	 * NOTE (P1-10): the epub compile path should pass `includeTitlePage: false`
+	 * once wired up, since pandoc's epub writer generates its own title page
+	 * from --metadata=title (required by the OPF package) — keeping both would
+	 * stack two title pages. Docx/markdown/pdf should keep this at the default
+	 * (true) since those writers no longer receive --metadata=title (see
+	 * buildPandocArgs in pandoc.ts) and rely on this generated title page.
+	 * Wiring the compile route to pass this option per-format is a follow-up;
+	 * this option is exported now so that wiring can land without touching
+	 * this file's signature.
+	 */
+	includeTitlePage?: boolean;
+}
+
 /**
  * Assemble a complete HTML document from compiled documents.
  * Generates a title page and wraps each document in a section with chapter heading.
@@ -12,14 +29,17 @@ export interface AssembleResult {
  * @param documents - Ordered list of documents to include
  * @param metadata - Novel title and subtitle
  * @param readContent - Function to read document content from disk
+ * @param options - Optional assembly options (e.g. omit generated title page)
  */
 export function assembleCompileHtml(
 	documents: CompileDocument[],
 	metadata: CompileMetadata,
-	readContent: (novelId: string, docId: string) => string | null
+	readContent: (novelId: string, docId: string) => string | null,
+	options: AssembleOptions = {}
 ): AssembleResult {
+	const { includeTitlePage = true } = options;
 	const warnings: string[] = [];
-	const titlePage = buildTitlePage(metadata);
+	const titlePage = includeTitlePage ? buildTitlePage(metadata) : '';
 	const chapters = documents.map(doc => {
 		const content = readContent(doc.novelId, doc.id);
 		if (content === null) {

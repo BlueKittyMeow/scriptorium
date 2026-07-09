@@ -42,17 +42,30 @@ export async function convertHtmlToFormat(
 	}
 }
 
-function buildPandocArgs(format: CompileFormat, metadata: CompileMetadata): string[] {
+/**
+ * Build the Pandoc CLI args for a given output format.
+ *
+ * Metadata policy (see docs/remediation-plan-2026-07.md P1-10):
+ * the assembled HTML already carries a generated title-page div, so passing
+ * --metadata=title/subtitle to pandoc's docx/markdown/pdf writers would make
+ * them ALSO emit their own title block, stacking two title pages. Only epub
+ * keeps the metadata flags — the EPUB OPF package requires a <dc:title>, and
+ * (per assemble.ts's `includeTitlePage` option) the epub compile path should
+ * omit the generated HTML title-page div to avoid a duplicate there too.
+ */
+export function buildPandocArgs(format: CompileFormat, metadata: CompileMetadata): string[] {
 	const pandocFormat = format === 'markdown' ? 'markdown' : format;
 	const args = [
 		'-f', 'html',
 		'-t', pandocFormat,
-		'--standalone',
-		`--metadata=title:${metadata.title}`
+		'--standalone'
 	];
 
-	if (metadata.subtitle) {
-		args.push(`--metadata=subtitle:${metadata.subtitle}`);
+	if (format === 'epub') {
+		args.push(`--metadata=title:${metadata.title}`);
+		if (metadata.subtitle) {
+			args.push(`--metadata=subtitle:${metadata.subtitle}`);
+		}
 	}
 
 	if (format === 'pdf') {
@@ -86,6 +99,12 @@ function spawnPandoc(args: string[], input: Buffer): Promise<Buffer> {
 		});
 
 		proc.on('error', (err: Error) => reject(err));
+
+		// If pandoc dies before/while we write (bad args, OOM), writing to its
+		// closed stdin can emit an unhandled EPIPE that crashes the process.
+		// The `close` handler above already reports the real failure, so just
+		// swallow stdin errors here.
+		proc.stdin.on('error', () => {});
 
 		proc.stdin.write(input);
 		proc.stdin.end();

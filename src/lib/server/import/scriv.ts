@@ -23,9 +23,11 @@ function convertRtf(rtfBuffer: Buffer): Promise<string> {
 }
 
 function extractBodyContent(html: string): string {
-	const bodyMatch = html.match(/<body>([\s\S]*)<\/body>/);
+	const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/);
 	return bodyMatch ? bodyMatch[1].trim() : html;
 }
+
+const FRONT_MATTER_WARNING = 'Front matter excluded from compile — review in the binder';
 
 interface BinderItem {
 	'@_ID': string;
@@ -89,6 +91,7 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 	const parser = new XMLParser({
 		ignoreAttributes: false,
 		attributeNamePrefix: '@_',
+		parseTagValue: false,
 		isArray: (name: string) => name === 'BinderItem' || name === 'Label' || name === 'Status'
 	});
 	const project = parser.parse(xml);
@@ -100,14 +103,14 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 	try {
 		const labelItems = project.ScrivenerProject.LabelSettings.Labels.Label;
 		for (const l of labelItems) {
-			labels[l['@_ID']] = l['#text'] || '';
+			labels[l['@_ID']] = String(l['#text'] ?? '');
 		}
 	} catch { /* no labels */ }
 
 	try {
 		const statusItems = project.ScrivenerProject.StatusSettings.StatusItems.Status;
 		for (const s of statusItems) {
-			statuses[s['@_ID']] = s['#text'] || '';
+			statuses[s['@_ID']] = String(s['#text'] ?? '');
 		}
 	} catch { /* no statuses */ }
 
@@ -131,7 +134,7 @@ export async function importScriv(db: Database.Database, scrivPath: string): Pro
 	try {
 		let rootSort = 1.0;
 		for (const item of items) {
-			await walkBinderItem(db, item, novelId, null, docsDir, labels, statuses, report, rootSort);
+			await walkBinderItem(db, item, novelId, null, docsDir, labels, statuses, report, rootSort, false);
 			rootSort += 1.0;
 		}
 	} catch (err: any) {
@@ -160,17 +163,20 @@ async function walkBinderItem(
 	labels: Record<string, string>,
 	statuses: Record<string, string>,
 	report: ImportReport,
-	sortOrder: number
+	sortOrder: number,
+	insideFrontMatter: boolean = false
 ): Promise<void> {
 	const scrivId = item['@_ID'];
 	validatePathSegment(scrivId);
 	const type = item['@_Type'];
-	const title = item.Title || '(untitled)';
+	const title = String(item.Title ?? '') || '(untitled)';
 	const now = new Date().toISOString();
 	const id = uuid();
 
 	const isFolder = type.includes('Folder') || type === 'Root';
 	const isTrash = type === 'Trash';
+	// Front Matter (any depth, case-insensitive) marks itself and all descendants
+	const childInsideFrontMatter = insideFrontMatter || title.toLowerCase() === 'front matter';
 
 	if (isFolder || isTrash) {
 		// Determine folder_type
@@ -202,14 +208,21 @@ async function walkBinderItem(
 			const children = Array.isArray(item.Children.BinderItem) ? item.Children.BinderItem : [item.Children.BinderItem];
 			let childSort = 1.0;
 			for (const child of children) {
-				await walkBinderItem(db, child, novelId, id, docsDir, labels, statuses, report, childSort);
+				await walkBinderItem(db, child, novelId, id, docsDir, labels, statuses, report, childSort, childInsideFrontMatter);
 				childSort += 1.0;
 			}
 		}
 	} else {
 		// Document (Text type)
 		const meta = item.MetaData || {};
-		const compileInclude = meta.IncludeInCompile !== 'No' ? 1 : 0;
+		let compileInclude = meta.IncludeInCompile !== 'No' ? 1 : 0;
+
+		if (insideFrontMatter) {
+			compileInclude = 0;
+			if (!report.warnings.includes(FRONT_MATTER_WARNING)) {
+				report.warnings.push(FRONT_MATTER_WARNING);
+			}
+		}
 
 		// Try to read synopsis
 		let synopsis: string | null = null;
@@ -236,7 +249,7 @@ async function walkBinderItem(
 			const children = Array.isArray(item.Children.BinderItem) ? item.Children.BinderItem : [item.Children.BinderItem];
 			let childSort = 1.0;
 			for (const child of children) {
-				await walkBinderItem(db, child, novelId, id, docsDir, labels, statuses, report, childSort);
+				await walkBinderItem(db, child, novelId, id, docsDir, labels, statuses, report, childSort, childInsideFrontMatter);
 				childSort += 1.0;
 			}
 		}
