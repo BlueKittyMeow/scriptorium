@@ -168,24 +168,26 @@
 		{#if activeTab === 'users'}
 			<section class="panel">
 				<h2>Users</h2>
-				<table class="data-table">
-					<thead>
-						<tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr>
-					</thead>
-					<tbody>
-						{#each users as user}
-							<tr>
-								<td>{user.username}</td>
-								<td><span class="role-badge" class:archivist={user.role === 'archivist'}>{user.role}</span></td>
-								<td>{new Date(user.created_at).toLocaleDateString()}</td>
-								<td class="actions">
-									<button class="btn-sm" onclick={() => changePassword(user.id)}>Change Password</button>
-									<button class="btn-sm btn-danger" onclick={() => deleteUser(user.id, user.username)}>Delete</button>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+				<div class="table-scroll">
+					<table class="data-table">
+						<thead>
+							<tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr>
+						</thead>
+						<tbody>
+							{#each users as user}
+								<tr>
+									<td>{user.username}</td>
+									<td><span class="role-badge" class:archivist={user.role === 'archivist'}>{user.role}</span></td>
+									<td>{new Date(user.created_at).toLocaleDateString()}</td>
+									<td class="actions">
+										<button class="btn-sm" onclick={() => changePassword(user.id)}>Change Password</button>
+										<button class="btn-sm btn-danger" onclick={() => deleteUser(user.id, user.username)}>Delete</button>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
 
 				<h3>Create User</h3>
 				<div class="create-form">
@@ -209,25 +211,27 @@
 				{:else if trashItems.length === 0}
 					<p class="muted">Trash is empty</p>
 				{:else}
-					<table class="data-table">
-						<thead>
-							<tr><th>Title</th><th>Type</th><th>Novel</th><th>Deleted</th><th>Actions</th></tr>
-						</thead>
-						<tbody>
-							{#each trashItems as item}
-								<tr>
-									<td>{item.title}</td>
-									<td>{item.type}</td>
-									<td>{item.novel_title || '—'}</td>
-									<td>{new Date(item.deleted_at).toLocaleDateString()}</td>
-									<td class="actions">
-										<button class="btn-sm" onclick={() => restoreItem(item.type, item.id)}>Restore</button>
-										<button class="btn-sm btn-danger" onclick={() => purgeItem(item.type, item.id, item.title)}>Purge</button>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+					<div class="table-scroll">
+						<table class="data-table">
+							<thead>
+								<tr><th>Title</th><th>Type</th><th>Novel</th><th>Deleted</th><th>Actions</th></tr>
+							</thead>
+							<tbody>
+								{#each trashItems as item}
+									<tr>
+										<td>{item.title}</td>
+										<td>{item.type}</td>
+										<td>{item.novel_title || '—'}</td>
+										<td>{new Date(item.deleted_at).toLocaleDateString()}</td>
+										<td class="actions">
+											<button class="btn-sm" onclick={() => restoreItem(item.type, item.id)}>Restore</button>
+											<button class="btn-sm btn-danger" onclick={() => purgeItem(item.type, item.id, item.title)}>Purge</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 				{/if}
 			</section>
 
@@ -244,14 +248,16 @@
 
 					{#if storageData.novelSnapshots?.length}
 						<h3>Snapshots per Novel</h3>
-						<table class="data-table">
-							<thead><tr><th>Novel</th><th>Snapshots</th></tr></thead>
-							<tbody>
-								{#each storageData.novelSnapshots as ns}
-									<tr><td>{ns.title}</td><td>{ns.snapshot_count}</td></tr>
-								{/each}
-							</tbody>
-						</table>
+						<div class="table-scroll">
+							<table class="data-table">
+								<thead><tr><th>Novel</th><th>Snapshots</th></tr></thead>
+								<tbody>
+									{#each storageData.novelSnapshots as ns}
+										<tr><td>{ns.title}</td><td>{ns.snapshot_count}</td></tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
 					{/if}
 				{:else}
 					<p class="muted">Loading...</p>
@@ -264,19 +270,21 @@
 				{#if auditEntries.length === 0}
 					<p class="muted">No audit entries yet</p>
 				{:else}
-					<table class="data-table">
-						<thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
-						<tbody>
-							{#each auditEntries as entry}
-								<tr>
-									<td>{new Date(entry.created_at).toLocaleString()}</td>
-									<td>{entry.username || '—'}</td>
-									<td><code>{entry.action}</code></td>
-									<td>{entry.details || '—'}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+					<div class="table-scroll">
+						<table class="data-table">
+							<thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+							<tbody>
+								{#each auditEntries as entry}
+									<tr>
+										<td>{new Date(entry.created_at).toLocaleString()}</td>
+										<td>{entry.username || '—'}</td>
+										<td><code>{entry.action}</code></td>
+										<td>{entry.details || '—'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 
 					{#if auditTotal > 1}
 						<div class="pagination">
@@ -352,6 +360,11 @@
 		font-size: 1rem;
 		margin-top: 1.5rem;
 		margin-bottom: 0.75rem;
+	}
+
+	.table-scroll {
+		overflow-x: auto;
+		max-width: 100%;
 	}
 
 	.data-table {
@@ -508,5 +521,31 @@
 		padding: 0.1rem 0.3rem;
 		border-radius: 3px;
 		font-size: 0.8rem;
+	}
+
+	@media (max-width: 768px) {
+		.admin-page {
+			padding: 1rem;
+		}
+
+		.admin-header {
+			flex-wrap: wrap;
+			gap: 0.5rem;
+		}
+
+		.tabs {
+			overflow-x: auto;
+			max-width: 100%;
+			flex-wrap: nowrap;
+		}
+
+		.tabs button {
+			flex: 0 0 auto;
+		}
+
+		.create-form input,
+		.create-form select {
+			font-size: 16px;
+		}
 	}
 </style>

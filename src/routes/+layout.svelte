@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 
 	let { children, data } = $props();
 
 	let theme = $state('system');
 	let mounted = $state(false);
+
+	// The workspace page fills 100dvh; a normal-flow top bar above it would
+	// push the editor footer off-screen on mobile, so the bar hides there
+	// (mobile only — CSS scoped). Sign-out/admin remain reachable from the library.
+	const isWorkspace = $derived(/^\/novels\/(?!compare$)[^/]+$/.test($page.url.pathname));
 
 	async function logout() {
 		await fetch('/api/auth/logout', { method: 'POST' });
@@ -46,12 +52,8 @@
 	}
 </script>
 
-<div class="app">
-	{@render children()}
-</div>
-
 {#if mounted}
-	<div class="top-bar">
+	<div class="top-bar" class:on-workspace={isWorkspace}>
 		{#if data.user}
 			<span class="user-info">{data.user.username} <span class="role-tag">{data.user.role}</span></span>
 			{#if data.user.role === 'archivist'}
@@ -64,6 +66,10 @@
 		</button>
 	</div>
 {/if}
+
+<div class="app">
+	{@render children()}
+</div>
 
 <style>
 	:global(:root) {
@@ -178,6 +184,7 @@
 		z-index: 200;
 		display: flex;
 		align-items: center;
+		justify-content: flex-end;
 		gap: 0.5rem;
 		padding: 0.5rem 0.75rem;
 	}
@@ -185,6 +192,9 @@
 	.user-info {
 		font-size: 0.8rem;
 		color: var(--text-secondary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.role-tag {
@@ -232,5 +242,30 @@
 	.theme-toggle:hover {
 		opacity: 1;
 		background: var(--bg-elevated);
+	}
+
+	/* Mobile: top bar becomes a normal-flow, full-width bar instead of
+	   floating over page content (which was rendering underneath it). */
+	@media (max-width: 768px) {
+		.top-bar {
+			position: static;
+			top: auto;
+			right: auto;
+			width: 100%;
+			box-sizing: border-box;
+			flex-wrap: nowrap;
+			background: var(--bg-surface);
+			border-bottom: 1px solid var(--border);
+		}
+
+		.user-info {
+			max-width: 35vw;
+		}
+
+		/* Writing screen fills 100dvh — hide the bar there so nothing pushes
+		   the editor footer below the viewport. */
+		.top-bar.on-workspace {
+			display: none;
+		}
 	}
 </style>
