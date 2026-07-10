@@ -1,22 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { realpathSync, statSync } from 'fs';
+import path from 'path';
 import os from 'os';
 import { importScriv } from '$lib/server/import/scriv.js';
+import { resolveOwnerId } from '$lib/server/import/owner.js';
 import type { ImportReport } from '$lib/types.js';
 import { requireUser } from '$lib/server/auth.js';
-
-/**
- * Resolve owner_id for an import. Archivist-only assignment; the requested
- * owner must exist, otherwise the acting user owns the import.
- */
-function resolveOwnerId(locals: App.Locals, requested: unknown): string {
-	const self = locals.user!.id;
-	if (locals.user!.role !== 'archivist') return self;
-	if (typeof requested !== 'string' || !requested) return self;
-	const exists = locals.db.prepare('SELECT id FROM users WHERE id = ?').get(requested);
-	return exists ? requested : self;
-}
 
 // POST /api/import/batch — import multiple .scriv projects
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -126,9 +116,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// Import with error isolation — one failure never aborts the batch
 		try {
 			const report = await importScriv(locals.db, resolved);
-			// Apply ownership on the created novel (importScriv doesn't set it).
+			// Apply ownership + import-source tag on the created novel
+			// (importScriv sets neither). import_source makes the origin
+			// bundle re-detectable; scriv dirs aren't stable idempotency keys
+			// the way bundle work keys are, so it's a tag only — no skip logic.
 			if (report.novel_id) {
-				locals.db.prepare('UPDATE novels SET owner_id = ? WHERE id = ?').run(ownerId, report.novel_id);
+				locals.db
+					.prepare('UPDATE novels SET owner_id = ?, import_source = ? WHERE id = ?')
+					.run(ownerId, `scriv:${path.basename(resolved)}`, report.novel_id);
 			}
 			results.push({ ...report, path: scrivPath });
 		} catch (err: any) {

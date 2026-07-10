@@ -32,6 +32,10 @@ export function getDb(): Database.Database {
 		// Adds novels.owner_id for legacy databases created before the column
 		// existed, then backfills any NULL owners to the first archivist.
 		runOwnershipMigration(_db);
+
+		// Import-source mini-migration (idempotent). Adds novels.import_source
+		// for legacy databases so bundle/scriv re-imports become detectable.
+		runImportSourceMigration(_db);
 	} catch (err) {
 		_db = null;
 		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
@@ -67,6 +71,23 @@ export function runOwnershipMigration(db: Database.Database): void {
 	).run();
 }
 
+/**
+ * Import-source migration. Exported so tests can exercise it against a
+ * legacy database created without the import_source column.
+ *
+ * Adds novels.import_source (nullable) if missing. This is the idempotency
+ * handle for bulk import: bundle imports tag novels `bundle:<work key>` and
+ * batch .scriv imports tag them `scriv:<basename>`, so a re-run can detect
+ * and skip work already ingested. No backfill — legacy novels simply stay
+ * NULL (they were never imported through the tagged paths).
+ */
+export function runImportSourceMigration(db: Database.Database): void {
+	const cols = db.prepare(`PRAGMA table_info(novels)`).all() as { name: string }[];
+	if (!cols.some((c) => c.name === 'import_source')) {
+		db.exec(`ALTER TABLE novels ADD COLUMN import_source TEXT`);
+	}
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS novels (
   id TEXT PRIMARY KEY,
@@ -75,6 +96,7 @@ CREATE TABLE IF NOT EXISTS novels (
   status TEXT DEFAULT 'draft',
   word_count_target INTEGER,
   owner_id TEXT REFERENCES users(id),
+  import_source TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

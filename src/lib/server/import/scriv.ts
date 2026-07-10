@@ -22,7 +22,7 @@ function convertRtf(rtfBuffer: Buffer): Promise<string> {
 	});
 }
 
-function extractBodyContent(html: string): string {
+export function extractBodyContent(html: string): string {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/);
 	return bodyMatch ? bodyMatch[1].trim() : html;
 }

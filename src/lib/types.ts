@@ -12,6 +12,8 @@ export interface Novel {
 	subtitle: string | null;
 	status: string;
 	word_count_target: number | null;
+	owner_id: string | null;
+	import_source: string | null;
 	created_at: string;
 	updated_at: string;
 	deleted_at: string | null;
@@ -83,6 +85,17 @@ export interface ImportReport {
 	total_word_count: number;
 	errors: string[];
 	warnings: string[];
+}
+
+/**
+ * Per-work result of a bundle import. Extends the scriv ImportReport with the
+ * variant-snapshot count and a `skipped` flag (idempotency), plus the source
+ * work key so the caller can correlate results back to the manifest.
+ */
+export interface BundleImportReport extends ImportReport {
+	work_key: string;
+	variants_imported: number;
+	skipped: boolean;
 }
 
 export interface ScrivProject {

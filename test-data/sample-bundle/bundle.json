@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "works": [
+    {
+      "key": "work-alpha",
+      "title": "The Glass Almanac",
+      "folders": [
+        { "key": "f1", "title": "Part One", "parent": null }
+      ],
+      "documents": [
+        {
+          "key": "d1",
+          "title": "Opening",
+          "folder": "f1",
+          "order": 1,
+          "html": "content/work-alpha/d1.html",
+          "source_note": "Desktop/Writing/opening.doc (2014-05-20)"
+        },
+        {
+          "key": "d2",
+          "title": "The Second Movement",
+          "folder": "f1",
+          "order": 2,
+          "html": "content/work-alpha/d2.html",
+          "source_note": "Desktop/Writing/second.doc (2015-01-02)",
+          "variants": [
+            {
+              "html": "content/work-alpha/d2.variant-1.html",
+              "label": "SecondMovementMay20.doc",
+              "timestamp": "2014-05-20T00:00:00Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
