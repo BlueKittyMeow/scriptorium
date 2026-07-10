@@ -409,6 +409,24 @@
 		if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
 		return `${count} words`;
 	}
+
+	// Novel status vocabulary — per spec.md's Data Model ("Novel — ...
+	// status (draft/revision/complete/abandoned)"). Mirrors NOVEL_STATUSES
+	// in src/lib/server/validate.ts, which enforces the same set server-side.
+	const NOVEL_STATUSES = ['draft', 'revision', 'complete', 'abandoned'];
+
+	async function cycleNovelStatus(e: MouseEvent, novelId: string, currentStatus: string) {
+		// Card is a link — stop the click from navigating (same guard as rename-btn).
+		e.preventDefault();
+		const idx = NOVEL_STATUSES.indexOf(currentStatus);
+		const next = NOVEL_STATUSES[(idx + 1) % NOVEL_STATUSES.length];
+		await fetch(`/api/novels/${novelId}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ status: next })
+		});
+		await loadNovels();
+	}
 </script>
 
 <div class="library">
@@ -470,7 +488,12 @@
 						<p class="novel-subtitle">{novel.subtitle}</p>
 					{/if}
 					<div class="novel-meta">
-						<span class="status">{novel.status}</span>
+						<button
+							type="button"
+							class="status-btn"
+							onclick={(e) => cycleNovelStatus(e, novel.id, novel.status)}
+							title="Click to change status"
+						>{novel.status}</button>
 						<span class="word-count">{formatWordCount(novel.total_word_count || 0)}</span>
 						{#if selectedShelf === 'all' && novel.owner_username}
 							<span class="owner">{novel.owner_username}</span>
@@ -533,7 +556,11 @@
 				     run report is in hand. -->
 				<div class="bundle-section">
 					<h3>Import Bundle</h3>
-					<p>Enter a path to a curated bundle directory (see the W5b spec):</p>
+					<p>
+						Import a prepared archive bundle — a folder containing
+						<code>bundle.json</code> created by an archive-preparation tool.
+						Runs a preview first; nothing is imported until you confirm.
+					</p>
 
 					{#if bundleError}
 						<div class="import-report error">
@@ -954,6 +981,14 @@
 		color: var(--accent);
 	}
 
+	/* Touch devices have no hover — reveal the rename pencil permanently
+	   (same pattern as the binder row actions in the workspace). */
+	@media (pointer: coarse) {
+		.rename-btn {
+			opacity: 1;
+		}
+	}
+
 	.novel-rename-input {
 		font-size: 1.1rem;
 		font-weight: 600;
@@ -983,11 +1018,22 @@
 		color: var(--text-muted);
 	}
 
-	.status {
+	.status-btn {
 		text-transform: capitalize;
 		padding: 0.1rem 0.5rem;
 		background: var(--bg-elevated);
 		border-radius: 3px;
+		border: none;
+		font: inherit;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.status-btn:hover {
+		background: var(--accent-bg);
+		color: var(--accent);
 	}
 
 	.owner {

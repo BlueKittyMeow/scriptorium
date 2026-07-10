@@ -93,6 +93,34 @@ export function validatePathSegment(segment: string): void {
 	}
 }
 
+/**
+ * Novel status vocabulary, per spec.md's Data Model section ("Novel — ...
+ * status (draft/revision/complete/abandoned)"). 'draft' is the default set
+ * at creation time.
+ */
+export const NOVEL_STATUSES = ['draft', 'revision', 'complete', 'abandoned'] as const;
+export type NovelStatus = (typeof NOVEL_STATUSES)[number];
+
+/**
+ * Validate an optional novel `status` field against NOVEL_STATUSES.
+ * Returns null when omitted/blank (so `COALESCE(?, status)` keeps the
+ * existing value untouched — same convention as normalizeOptionalString).
+ * Throws a 400 for any non-string or unrecognized value; stored/compared
+ * case-insensitively but always lowercased so the DB holds one canonical form.
+ */
+export function assertValidNovelStatus(status: unknown): string | null {
+	if (status === undefined || status === null) return null;
+	if (typeof status !== 'string') {
+		throw error(400, `status must be one of: ${NOVEL_STATUSES.join(', ')}`);
+	}
+	const trimmed = status.trim().toLowerCase();
+	if (!trimmed) return null;
+	if (!(NOVEL_STATUSES as readonly string[]).includes(trimmed)) {
+		throw error(400, `status must be one of: ${NOVEL_STATUSES.join(', ')}`);
+	}
+	return trimmed;
+}
+
 /** Sanitize FTS5 snippet output — only allow <mark> and </mark> tags. */
 export function sanitizeSnippet(snippet: string): string {
 	// Replace <mark> and </mark> with placeholders, escape everything else, restore marks

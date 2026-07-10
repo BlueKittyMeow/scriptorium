@@ -602,6 +602,13 @@
 						</div>
 					{/if}
 				</nav>
+
+				<!-- Mobile-only drawer footer — the top bar (and its Help link) is
+				     hidden on the workspace at this breakpoint (see +layout.svelte),
+				     so this is the reachable surface for Help on a phone. -->
+				<div class="sidebar-footer">
+					<a href="/help" class="sidebar-help-link">? Help</a>
+				</div>
 			</div>
 		{/if}
 	</aside>
@@ -1146,6 +1153,22 @@
 		letter-spacing: 0.05em;
 	}
 
+	/* Mobile-only drawer footer (Help link) — desktop already has the top
+	   bar's Help link, so this stays hidden there to avoid duplication. */
+	.sidebar-footer {
+		display: none;
+	}
+
+	.sidebar-help-link {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		text-decoration: none;
+	}
+
+	.sidebar-help-link:hover {
+		color: var(--accent);
+	}
+
 	/* Editor area */
 	.editor-area {
 		flex: 1;
@@ -1327,6 +1350,15 @@
 			color: var(--accent);
 			cursor: pointer;
 			box-shadow: 0 2px 8px var(--shadow-lg);
+		}
+
+		/* Workspace hides the top bar (and its Help link) on mobile — surface
+		   Help from the binder drawer footer instead, the drawer being the
+		   one piece of chrome that's already reachable via ☰. */
+		.sidebar-footer {
+			display: block;
+			padding: 0.5rem 1rem;
+			border-top: 1px solid var(--border-strong);
 		}
 	}
 </style>

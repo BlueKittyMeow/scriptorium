@@ -5,7 +5,9 @@ import {
 	assertValidParentFolder,
 	chainContainsNode,
 	normalizeOptionalString,
-	assertValidDocumentContent
+	assertValidDocumentContent,
+	assertValidNovelStatus,
+	NOVEL_STATUSES
 } from '$lib/server/validate.js';
 
 /**
@@ -170,5 +172,46 @@ describe('assertValidDocumentContent (P2-4)', () => {
 	it('accepts content right at the 10MB boundary', () => {
 		const atLimit = 'a'.repeat(10 * 1024 * 1024);
 		expect(() => assertValidDocumentContent(atLimit)).not.toThrow();
+	});
+});
+
+describe('assertValidNovelStatus (novel status vocabulary, spec.md Data Model)', () => {
+	it('returns null for undefined/null (no-op, keeps existing value)', () => {
+		expect(assertValidNovelStatus(undefined)).toBeNull();
+		expect(assertValidNovelStatus(null)).toBeNull();
+	});
+
+	it('returns null for an empty/whitespace-only string (no-op)', () => {
+		expect(assertValidNovelStatus('')).toBeNull();
+		expect(assertValidNovelStatus('   ')).toBeNull();
+	});
+
+	it('accepts every status in the defined vocabulary', () => {
+		for (const status of NOVEL_STATUSES) {
+			expect(assertValidNovelStatus(status)).toBe(status);
+		}
+	});
+
+	it('lowercases and trims a valid status', () => {
+		expect(assertValidNovelStatus('  Revision  ')).toBe('revision');
+		expect(assertValidNovelStatus('COMPLETE')).toBe('complete');
+	});
+
+	it('throws 400 for an unrecognized status string', () => {
+		expect(() => assertValidNovelStatus('finished')).toThrow();
+		try {
+			assertValidNovelStatus('finished');
+		} catch (e: any) {
+			expect(e.status).toBe(400);
+		}
+	});
+
+	it('throws 400 for a non-string value', () => {
+		expect(() => assertValidNovelStatus(42)).toThrow();
+		try {
+			assertValidNovelStatus(42);
+		} catch (e: any) {
+			expect(e.status).toBe(400);
+		}
 	});
 });

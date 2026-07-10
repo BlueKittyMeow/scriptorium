@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { softDeleteNovel } from '$lib/server/tree-ops.js';
 import { requireUser } from '$lib/server/auth.js';
 import { logAction } from '$lib/server/audit.js';
+import { assertValidNovelStatus } from '$lib/server/validate.js';
 
 // GET /api/novels/:id
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -38,6 +39,9 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		if (ownerExists) ownerId = body.owner_id;
 	}
 
+	// 400s on an unrecognized status; null (no-op) when omitted/blank.
+	const status = assertValidNovelStatus(body.status);
+
 	locals.db.prepare(`
 		UPDATE novels SET
 			title = COALESCE(?, title),
@@ -47,7 +51,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 			owner_id = COALESCE(?, owner_id),
 			updated_at = ?
 		WHERE id = ?
-	`).run(body.title, body.subtitle, body.status, body.word_count_target, ownerId, now, params.id);
+	`).run(body.title, body.subtitle, status, body.word_count_target, ownerId, now, params.id);
 
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ?').get(params.id);
 	return json(novel);

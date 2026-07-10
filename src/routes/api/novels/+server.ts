@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid';
 import { ensureNovelDirs } from '$lib/server/files.js';
 import { requireUser } from '$lib/server/auth.js';
 import { logAction } from '$lib/server/audit.js';
+import { assertValidNovelStatus } from '$lib/server/validate.js';
 
 /**
  * Resolve the owner_id to write for a create/import.
@@ -48,10 +49,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// owner_id yet — any authenticated user may still edit any novel.
 	const ownerId = resolveOwnerId(locals, body.owner_id);
 
+	// 400s on an unrecognized status; falls back to 'draft' when omitted/blank.
+	const status = assertValidNovelStatus(body.status) || 'draft';
+
 	locals.db.prepare(`
 		INSERT INTO novels (id, title, subtitle, status, word_count_target, owner_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`).run(id, body.title || 'Untitled Novel', body.subtitle || null, body.status || 'draft', body.word_count_target || null, ownerId, now, now);
+	`).run(id, body.title || 'Untitled Novel', body.subtitle || null, status, body.word_count_target || null, ownerId, now, now);
 
 	ensureNovelDirs(id);
 

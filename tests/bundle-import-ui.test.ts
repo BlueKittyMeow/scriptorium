@@ -191,6 +191,29 @@ describe('bundle import: modal lifecycle guards', () => {
 	});
 });
 
+describe('bundle import: plain-language modal copy (user-guide audit)', () => {
+	// Scope to the user-facing paragraph right after the "Import Bundle" heading —
+	// the surrounding code has its own "(W5b Unit D)" comments, which are fine.
+	function copyBlock(): string {
+		const idx = SOURCE.indexOf('Import Bundle');
+		expect(idx).toBeGreaterThan(-1);
+		return SOURCE.slice(idx, idx + 500);
+	}
+
+	it('does not reference the internal W5b spec or "curated bundle directory" jargon in the copy shown to users', () => {
+		const block = copyBlock();
+		expect(block).not.toMatch(/W5b/);
+		expect(block).not.toMatch(/curated bundle directory/i);
+	});
+
+	it('explains bundle.json and the dry-run-first, nothing-imported-until-confirm behavior in plain language', () => {
+		const block = copyBlock();
+		expect(block).toMatch(/bundle\.json/);
+		expect(block).toMatch(/preview/i);
+		expect(block).toMatch(/nothing is imported until you confirm/i);
+	});
+});
+
 describe('bundle import: types', () => {
 	it('imports the BundleImportReport type shared with the backend (Unit B)', () => {
 		expect(SOURCE).toMatch(/import type \{[^}]*BundleImportReport[^}]*\} from '\$lib\/types\.js';/);
