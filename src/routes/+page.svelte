@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import type { ScrivProject } from '$lib/types.js';
+	import type { ScrivProject, BundleImportReport } from '$lib/types.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -113,6 +113,38 @@
 		importMode === 'scanning' || importMode === 'importing_single' || importMode === 'importing_batch'
 	);
 
+	// ─── Bundle import (W5b Unit D) ──────────────────────────────────
+	// A sibling flow beside the .scriv scan/import above, reusing the same
+	// modal, path-input conventions, and archivist owner picker (importOwnerId).
+	// Own state machine because it has a dry-run → confirm step the .scriv
+	// flow doesn't: idle -> dry_running -> dry_run_done -> importing -> done.
+	type BundleMode = 'idle' | 'dry_running' | 'dry_run_done' | 'importing' | 'done';
+	let bundlePath = $state('');
+	let bundleMode = $state<BundleMode>('idle');
+	let bundleError: string | null = $state(null);
+	let bundleReports: BundleImportReport[] | null = $state(null);
+	let isBundleBusy = $derived(bundleMode === 'dry_running' || bundleMode === 'importing');
+
+	// The path/owner a completed dry run was run against. If either changes
+	// afterward, the pending confirm is stale — reset before it can be acted
+	// on (the footgun: dry-run one bundle, edit the path, hit confirm, import
+	// the wrong thing).
+	let lastDryRunPath = $state('');
+	let lastDryRunOwnerId = $state('');
+
+	$effect(() => {
+		const pathNow = bundlePath.trim();
+		const ownerNow = importOwnerId;
+		if (
+			(bundleMode === 'dry_run_done' || bundleMode === 'done') &&
+			(pathNow !== lastDryRunPath || ownerNow !== lastDryRunOwnerId)
+		) {
+			bundleMode = 'idle';
+			bundleReports = null;
+			bundleError = null;
+		}
+	});
+
 	// Client refresh after create/import — re-fetch the same list the server load
 	// produced so the grid updates without a full navigation.
 	async function loadNovels() {
@@ -155,14 +187,22 @@
 		batchResults = null;
 		batchProgress = { current: 0, total: 0, currentName: '' };
 		if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+		// Reset the bundle flow too — it's a sibling of the scriv flow above.
+		bundlePath = '';
+		bundleMode = 'idle';
+		bundleError = null;
+		bundleReports = null;
+		lastDryRunPath = '';
+		lastDryRunOwnerId = '';
 		showImportModal = true;
 	}
 
 	function closeImportModal() {
 		// Scanning is cancellable — abort it first
 		if (scanAbort) { scanAbort.abort(); scanAbort = null; }
-		// Block close only during active imports (not scanning)
+		// Block close only during active imports (not scanning/dry-running)
 		if (importMode === 'importing_single' || importMode === 'importing_batch') return;
+		if (isBundleBusy) return;
 		showImportModal = false;
 	}
 
@@ -278,6 +318,68 @@
 			importError = err.message;
 			importMode = 'project_list';
 		}
+	}
+
+	async function bundleDryRun() {
+		if (!bundlePath.trim()) return;
+		bundleMode = 'dry_running';
+		bundleError = null;
+		bundleReports = null;
+		try {
+			const payload: Record<string, unknown> = { path: bundlePath.trim(), dry_run: true };
+			if (isArchivist && importOwnerId) payload.owner_id = importOwnerId;
+			const res = await fetch('/api/import/bundle', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				bundleError = err.message || 'Dry run failed';
+				bundleMode = 'idle';
+				return;
+			}
+			bundleReports = await res.json();
+			lastDryRunPath = bundlePath.trim();
+			lastDryRunOwnerId = importOwnerId;
+			bundleMode = 'dry_run_done';
+		} catch (err: any) {
+			bundleError = err.message;
+			bundleMode = 'idle';
+		}
+	}
+
+	async function bundleImport() {
+		if (bundleMode !== 'dry_run_done' || !bundleReports) return;
+		bundleMode = 'importing';
+		bundleError = null;
+		try {
+			const payload: Record<string, unknown> = { path: bundlePath.trim(), dry_run: false };
+			if (isArchivist && importOwnerId) payload.owner_id = importOwnerId;
+			const res = await fetch('/api/import/bundle', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				bundleError = err.message || 'Import failed';
+				bundleMode = 'dry_run_done';
+				return;
+			}
+			bundleReports = await res.json();
+			bundleMode = 'done';
+			await loadNovels();
+		} catch (err: any) {
+			bundleError = err.message;
+			bundleMode = 'dry_run_done';
+		}
+	}
+
+	function bundleBack() {
+		bundleMode = 'idle';
+		bundleReports = null;
+		bundleError = null;
 	}
 
 	function handleImportAction() {
@@ -421,6 +523,143 @@
 						<button class="btn btn-primary" onclick={scanDirectory} disabled={!importPath.trim()}>
 							Scan for Projects
 						</button>
+					{/if}
+				</div>
+
+				<hr class="import-section-divider" />
+
+				<!-- Bundle import (W5b Unit D) — sibling flow, shares the owner
+				     picker above. Dry-run first; confirm only appears once a dry
+				     run report is in hand. -->
+				<div class="bundle-section">
+					<h3>Import Bundle</h3>
+					<p>Enter a path to a curated bundle directory (see the W5b spec):</p>
+
+					{#if bundleError}
+						<div class="import-report error">
+							<p class="report-error">{bundleError}</p>
+						</div>
+					{/if}
+
+					<input
+						type="text"
+						bind:value={bundlePath}
+						placeholder="~/Writing/bundle-export"
+						disabled={isBundleBusy}
+						onkeydown={(e) => e.key === 'Enter' && bundleMode === 'idle' && bundleDryRun()}
+					/>
+
+					{#if bundleMode === 'idle'}
+						<div class="modal-actions">
+							<button class="btn btn-secondary" onclick={bundleDryRun} disabled={!bundlePath.trim()}>
+								Dry Run
+							</button>
+						</div>
+
+					{:else if bundleMode === 'dry_running'}
+						<p>Running dry run...</p>
+
+					{:else if bundleMode === 'dry_run_done' && bundleReports}
+						<p>Dry run: {bundleReports.length} work{bundleReports.length !== 1 ? 's' : ''} found.</p>
+						<div class="batch-results">
+							{#each bundleReports as report}
+								<div class="batch-result-item" class:failed={report.errors.length > 0}>
+									<div class="batch-result-header">
+										<span class="project-name">{report.novel_title || report.work_key}</span>
+										{#if report.errors.length > 0}
+											<span class="badge-error">Failed</span>
+										{:else if report.skipped}
+											<span class="duplicate-badge">Already imported</span>
+										{:else}
+											<span class="badge-success">{report.docs_imported} docs</span>
+										{/if}
+									</div>
+									{#if report.errors.length > 0}
+										<p class="report-error batch-error-detail">{report.errors.join(', ')}</p>
+									{:else}
+										<ul>
+											<li>{report.docs_imported} document{report.docs_imported !== 1 ? 's' : ''}</li>
+											<li>{report.folders_created} folder{report.folders_created !== 1 ? 's' : ''}</li>
+											{#if report.variants_imported > 0}
+												<li>{report.variants_imported} variant{report.variants_imported !== 1 ? 's' : ''}</li>
+											{/if}
+											{#if report.total_word_count > 0}
+												<li>{formatWordCount(report.total_word_count)}</li>
+											{/if}
+										</ul>
+									{/if}
+									{#if report.warnings?.length > 0}
+										<details>
+											<summary class="batch-warnings-summary">{report.warnings.length} warning{report.warnings.length !== 1 ? 's' : ''}</summary>
+											<ul>
+												{#each report.warnings as warning}
+													<li>{warning}</li>
+												{/each}
+											</ul>
+										</details>
+									{/if}
+								</div>
+							{/each}
+						</div>
+						<div class="modal-actions">
+							<button class="btn btn-secondary" onclick={bundleBack}>Back</button>
+							<button class="btn btn-primary" onclick={bundleImport}>
+								Import {bundleReports.length} work{bundleReports.length !== 1 ? 's' : ''}
+							</button>
+						</div>
+
+					{:else if bundleMode === 'importing'}
+						<p>Importing {bundleReports?.length ?? ''} work{(bundleReports?.length ?? 0) !== 1 ? 's' : ''}...</p>
+
+					{:else if bundleMode === 'done' && bundleReports}
+						<p>Bundle import complete.</p>
+						<div class="batch-results">
+							{#each bundleReports as report}
+								<div class="batch-result-item" class:failed={report.errors.length > 0}>
+									<div class="batch-result-header">
+										<span class="project-name">{report.novel_title || report.work_key}</span>
+										{#if report.errors.length > 0}
+											<span class="badge-error">Failed</span>
+										{:else if report.skipped}
+											<span class="duplicate-badge">Already imported</span>
+										{:else}
+											<span class="badge-success">{report.docs_imported} docs</span>
+										{/if}
+									</div>
+									{#if report.errors.length > 0}
+										<p class="report-error batch-error-detail">{report.errors.join(', ')}</p>
+									{:else}
+										<ul>
+											<li>{report.docs_imported} document{report.docs_imported !== 1 ? 's' : ''}</li>
+											<li>{report.folders_created} folder{report.folders_created !== 1 ? 's' : ''}</li>
+											{#if report.variants_imported > 0}
+												<li>{report.variants_imported} variant{report.variants_imported !== 1 ? 's' : ''}</li>
+											{/if}
+											{#if report.total_word_count > 0}
+												<li>{formatWordCount(report.total_word_count)}</li>
+											{/if}
+										</ul>
+										{#if report.novel_id}
+											<div class="batch-result-actions">
+												<button class="btn btn-primary btn-sm" onclick={() => goto(`/novels/${report.novel_id}`)}>
+													Open
+												</button>
+											</div>
+										{/if}
+									{/if}
+									{#if report.warnings?.length > 0}
+										<details>
+											<summary class="batch-warnings-summary">{report.warnings.length} warning{report.warnings.length !== 1 ? 's' : ''}</summary>
+											<ul>
+												{#each report.warnings as warning}
+													<li>{warning}</li>
+												{/each}
+											</ul>
+										</details>
+									{/if}
+								</div>
+							{/each}
+						</div>
 					{/if}
 				</div>
 
@@ -1049,6 +1288,20 @@
 		color: var(--text-muted);
 		cursor: pointer;
 		margin-top: 0.25rem;
+	}
+
+	/* Bundle import (W5b Unit D) — sits below the .scriv flow in the same modal */
+	.import-section-divider {
+		border: none;
+		border-top: 1px solid var(--border);
+		margin: 1.25rem 0;
+	}
+
+	.bundle-section h3 {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--text-heading);
+		margin-bottom: 0.5rem;
 	}
 
 	@media (max-width: 600px) {
