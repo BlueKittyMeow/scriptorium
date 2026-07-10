@@ -60,6 +60,7 @@
 				<a href="/admin" class="admin-link">Admin</a>
 			{/if}
 			<button class="logout-btn" onclick={logout}>Sign Out</button>
+			<a href="/help" class="help-link" title="User guide" aria-label="User guide">?</a>
 		{/if}
 		<button class="theme-toggle" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
 			{themeIcon}
@@ -223,7 +224,8 @@
 	}
 	.logout-btn:hover { background: var(--bg-elevated); }
 
-	.theme-toggle {
+	.theme-toggle,
+	.help-link {
 		width: 2rem;
 		height: 2rem;
 		border-radius: 50%;
@@ -239,7 +241,14 @@
 		transition: opacity 0.15s, background 0.15s;
 	}
 
-	.theme-toggle:hover {
+	.help-link {
+		text-decoration: none;
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+
+	.theme-toggle:hover,
+	.help-link:hover {
 		opacity: 1;
 		background: var(--bg-elevated);
 	}
