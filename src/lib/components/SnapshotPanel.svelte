@@ -5,12 +5,14 @@
 		snapshots = [],
 		activeSnapshotId = null,
 		onPreview,
+		onCompare,
 		onClose,
 		onLoadMore
 	}: {
 		snapshots: SnapshotSummary[];
 		activeSnapshotId?: string | null;
 		onPreview: (snapId: string) => void;
+		onCompare: (snapId: string) => void;
 		onClose: () => void;
 		onLoadMore?: () => void;
 	} = $props();
@@ -60,9 +62,17 @@
 		return diff > 0 ? `+${diff}` : `${diff}`;
 	}
 
+	const IMPORTED_PREFIX = 'imported-variant: ';
+
+	function isImported(reason: string): boolean {
+		return reason.startsWith(IMPORTED_PREFIX);
+	}
+
 	function reasonLabel(reason: string): string {
 		if (reason === 'autosave') return 'auto';
 		if (reason === 'pre-restore') return 'pre-restore';
+		// Imported variants are labelled with just the source filename
+		if (isImported(reason)) return reason.slice(IMPORTED_PREFIX.length);
 		return reason;
 	}
 </script>
@@ -83,18 +93,25 @@
 					{#each daySnapshots as snap, i}
 						{@const globalIndex = indexMap.get(snap.id) ?? 0}
 						{@const delta = formatDelta(globalIndex)}
-						<button
+						<div
 							class="snapshot-entry"
 							class:active={activeSnapshotId === snap.id}
-							onclick={() => onPreview(snap.id)}
 						>
-							<span class="snap-time">{formatTime(snap.created_at)}</span>
-							<span class="snap-words">{(snap.word_count ?? 0).toLocaleString()} words</span>
-							{#if delta}
-								<span class="snap-delta" class:positive={delta.startsWith('+')} class:negative={delta.startsWith('-')}>{delta}</span>
-							{/if}
-							<span class="snap-reason reason-{snap.reason}">{reasonLabel(snap.reason)}</span>
-						</button>
+							<button class="snap-main" onclick={() => onPreview(snap.id)} title="Preview snapshot">
+								<span class="snap-time">{formatTime(snap.created_at)}</span>
+								<span class="snap-words">{(snap.word_count ?? 0).toLocaleString()} words</span>
+								{#if delta}
+									<span class="snap-delta" class:positive={delta.startsWith('+')} class:negative={delta.startsWith('-')}>{delta}</span>
+								{/if}
+								{#if isImported(snap.reason)}
+									<span class="snap-reason reason-imported">imported</span>
+									<span class="snap-filename" title={reasonLabel(snap.reason)}>{reasonLabel(snap.reason)}</span>
+								{:else}
+									<span class="snap-reason reason-{snap.reason}">{reasonLabel(snap.reason)}</span>
+								{/if}
+							</button>
+							<button class="snap-compare" onclick={() => onCompare(snap.id)} title="Compare with current" aria-label="Compare with current">⇄</button>
+						</div>
 					{/each}
 				</div>
 			{/each}
@@ -162,15 +179,7 @@
 	.snapshot-entry {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
 		width: 100%;
-		padding: 0.35rem 0.75rem;
-		background: none;
-		border: none;
-		cursor: pointer;
-		font-size: 0.8rem;
-		color: var(--text);
-		text-align: left;
 	}
 
 	.snapshot-entry:hover {
@@ -179,6 +188,40 @@
 
 	.snapshot-entry.active {
 		background: var(--accent-bg);
+	}
+
+	.snap-main {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		flex: 1;
+		min-width: 0;
+		padding: 0.35rem 0 0.35rem 0.75rem;
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.8rem;
+		color: var(--text);
+		text-align: left;
+	}
+
+	.snap-compare {
+		flex-shrink: 0;
+		padding: 0.2rem 0.4rem;
+		margin: 0 0.5rem 0 0.25rem;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		font-size: 0.85rem;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.snap-compare:hover {
+		color: var(--accent);
+		border-color: var(--border-input);
+		background: var(--bg-elevated);
 	}
 
 	.snap-time {
@@ -233,6 +276,21 @@
 	.reason-pre-restore {
 		color: var(--saving);
 		background: var(--bg-elevated);
+	}
+
+	.reason-imported {
+		color: var(--warning-text);
+		background: var(--warning-bg);
+	}
+
+	/* Imported-variant source filename — wraps to its own line under the entry */
+	.snap-filename {
+		flex-basis: 100%;
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.load-more {

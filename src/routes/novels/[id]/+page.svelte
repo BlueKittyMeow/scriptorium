@@ -2,10 +2,11 @@
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import type { TreeNode, SnapshotSummary } from '$lib/types.js';
+	import type { TreeNode, SnapshotSummary, DiffChange } from '$lib/types.js';
 	import Editor from '$lib/components/Editor.svelte';
 	import SnapshotPanel from '$lib/components/SnapshotPanel.svelte';
 	import SnapshotPreview from '$lib/components/SnapshotPreview.svelte';
+	import DiffView from '$lib/components/DiffView.svelte';
 	import CompileDialog from '$lib/components/CompileDialog.svelte';
 
 	let { data } = $props();
@@ -32,6 +33,9 @@
 	let snapshotOffset = $state(0);
 	let hasMoreSnapshots = $state(false);
 	let previewingSnapshot: { id: string; content: string } | null = $state(null);
+	let snapshotDiff: { snapId: string; changes: DiffChange[]; wordCountA: number; wordCountB: number; reason: string; created_at: string } | null = $state(null);
+	let diffLoading = $state(false);
+	let diffError: string | null = $state(null);
 	let showRestoreConfirm: string | null = $state(null);
 	let editorFlush: (() => Promise<void>) | null = $state(null);
 	let editorContentVersion = $state(0);
@@ -139,6 +143,7 @@
 		}
 		if (!showSnapshots) {
 			previewingSnapshot = null;
+			dismissDiff();
 		}
 	}
 
@@ -149,11 +154,44 @@
 		const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}`);
 		if (!res.ok) return;
 		const snapData = await res.json();
+		dismissDiff();
 		previewingSnapshot = { id: snapId, content: snapData.content };
 	}
 
 	function dismissPreview() {
 		previewingSnapshot = null;
+	}
+
+	// Diff takeover is visible while loading, on error, or with a result
+	const diffActive = $derived(diffLoading || !!diffError || !!snapshotDiff);
+
+	async function compareSnapshot(snapId: string) {
+		if (!activeDocId) return;
+		// Flush pending editor save so the diff reflects what's on screen
+		if (editorFlush) await editorFlush();
+		previewingSnapshot = null;
+		snapshotDiff = null;
+		diffError = null;
+		diffLoading = true;
+		try {
+			const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}/diff`);
+			if (!res.ok) {
+				diffError = `Could not load comparison (${res.status})`;
+				return;
+			}
+			const data = await res.json();
+			snapshotDiff = { snapId, ...data };
+		} catch {
+			diffError = 'Could not load comparison';
+		} finally {
+			diffLoading = false;
+		}
+	}
+
+	function dismissDiff() {
+		snapshotDiff = null;
+		diffError = null;
+		diffLoading = false;
 	}
 
 	function requestRestore(snapId: string) {
@@ -180,8 +218,9 @@
 		updateTreeNodeWordCount(tree, activeDocId, result.document.word_count);
 		tree = [...tree];
 
-		// Close preview, refresh snapshot list
+		// Close preview + diff, refresh snapshot list
 		previewingSnapshot = null;
+		dismissDiff();
 		await loadSnapshots(activeDocId);
 	}
 
@@ -206,6 +245,7 @@
 		if (docId && showSnapshots && docId !== prevSnapshotDocId) {
 			prevSnapshotDocId = docId;
 			previewingSnapshot = null;
+			dismissDiff();
 			loadSnapshots(docId);
 		} else if (!showSnapshots) {
 			prevSnapshotDocId = null;
@@ -579,8 +619,8 @@
 		{/if}
 
 		{#if activeDoc}
-			<!-- Live editor — hidden during preview, never destroyed -->
-			<div class="editor-wrapper" class:hidden={!!previewingSnapshot}>
+			<!-- Live editor — hidden during preview/diff, never destroyed -->
+			<div class="editor-wrapper" class:hidden={!!previewingSnapshot || diffActive}>
 				{#if browser}
 					<Editor
 						docId={activeDoc.id}
@@ -616,6 +656,36 @@
 					{/if}
 				</div>
 			{/if}
+
+			<!-- Snapshot diff — panel takeover, same pattern as preview -->
+			{#if diffActive}
+				<div class="snapshot-preview-area">
+					<div class="preview-banner">
+						<span>Comparing snapshot (A) with current (B)</span>
+						<div class="preview-actions">
+							{#if snapshotDiff}
+								<button class="btn btn-primary" onclick={() => snapshotDiff && requestRestore(snapshotDiff.snapId)}>Restore this version</button>
+							{/if}
+							<button class="btn btn-secondary" onclick={dismissDiff}>Back to current</button>
+						</div>
+					</div>
+					<div class="preview-scroll">
+						{#if diffLoading}
+							<p class="diff-status">Loading comparison…</p>
+						{:else if diffError}
+							<p class="diff-status diff-status-error">{diffError}</p>
+						{:else if snapshotDiff}
+							<div class="snapshot-diff-body">
+								<DiffView
+									changes={snapshotDiff.changes}
+									wordCountA={snapshotDiff.wordCountA}
+									wordCountB={snapshotDiff.wordCountB}
+								/>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		{:else}
 			<div class="no-doc">
 				<p>Select a document from the binder to begin writing.</p>
@@ -627,9 +697,10 @@
 	{#if showSnapshots && activeDocId}
 		<SnapshotPanel
 			{snapshots}
-			activeSnapshotId={previewingSnapshot?.id ?? null}
+			activeSnapshotId={previewingSnapshot?.id ?? snapshotDiff?.snapId ?? null}
 			onPreview={previewSnapshot}
-			onClose={() => { showSnapshots = false; previewingSnapshot = null; }}
+			onCompare={compareSnapshot}
+			onClose={() => { showSnapshots = false; previewingSnapshot = null; dismissDiff(); }}
 			onLoadMore={hasMoreSnapshots ? loadMoreSnapshots : undefined}
 		/>
 	{/if}
@@ -1120,6 +1191,23 @@
 		flex: 1;
 		overflow-y: auto;
 		background: var(--bg-surface);
+	}
+
+	.snapshot-diff-body {
+		max-width: 700px;
+		margin: 0 auto;
+		padding: 2rem 1.5rem;
+	}
+
+	.diff-status {
+		padding: 2rem 1.5rem;
+		text-align: center;
+		font-size: 0.9rem;
+		color: var(--text-muted);
+	}
+
+	.diff-status-error {
+		color: var(--error-text);
 	}
 
 	.modal-body {
