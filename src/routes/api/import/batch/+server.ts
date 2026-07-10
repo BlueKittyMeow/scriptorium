@@ -6,6 +6,18 @@ import { importScriv } from '$lib/server/import/scriv.js';
 import type { ImportReport } from '$lib/types.js';
 import { requireUser } from '$lib/server/auth.js';
 
+/**
+ * Resolve owner_id for an import. Archivist-only assignment; the requested
+ * owner must exist, otherwise the acting user owns the import.
+ */
+function resolveOwnerId(locals: App.Locals, requested: unknown): string {
+	const self = locals.user!.id;
+	if (locals.user!.role !== 'archivist') return self;
+	if (typeof requested !== 'string' || !requested) return self;
+	const exists = locals.db.prepare('SELECT id FROM users WHERE id = ?').get(requested);
+	return exists ? requested : self;
+}
+
 // POST /api/import/batch — import multiple .scriv projects
 export const POST: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals);
@@ -15,6 +27,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!Array.isArray(paths) || paths.length === 0) {
 		throw error(400, 'Missing or empty paths array');
 	}
+
+	// Ownership tagging (§C.1 first slice): one owner applies to every novel
+	// created in this batch. Archivist-only assignment; writers own their
+	// imports. NOTE: no permission enforcement rides on owner_id yet.
+	const ownerId = resolveOwnerId(locals, body.owner_id);
 
 	const homeDir = os.homedir();
 	const results: (ImportReport & { path: string })[] = [];
@@ -109,6 +126,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// Import with error isolation — one failure never aborts the batch
 		try {
 			const report = await importScriv(locals.db, resolved);
+			// Apply ownership on the created novel (importScriv doesn't set it).
+			if (report.novel_id) {
+				locals.db.prepare('UPDATE novels SET owner_id = ? WHERE id = ?').run(ownerId, report.novel_id);
+			}
 			results.push({ ...report, path: scrivPath });
 		} catch (err: any) {
 			results.push({

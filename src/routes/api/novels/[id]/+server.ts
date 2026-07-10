@@ -28,15 +28,26 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const existing = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!existing) throw error(404, 'Novel not found');
 
+	// Ownership reassignment is archivist-only (§C.1 first slice). Writers
+	// that send owner_id are silently ignored — owner_id stays NULL below so
+	// COALESCE keeps the existing owner. NOTE: no permission enforcement rides
+	// on owner_id yet; any authenticated user may still edit any novel.
+	let ownerId: string | null = null;
+	if (locals.user!.role === 'archivist' && typeof body.owner_id === 'string' && body.owner_id) {
+		const ownerExists = locals.db.prepare('SELECT id FROM users WHERE id = ?').get(body.owner_id);
+		if (ownerExists) ownerId = body.owner_id;
+	}
+
 	locals.db.prepare(`
 		UPDATE novels SET
 			title = COALESCE(?, title),
 			subtitle = COALESCE(?, subtitle),
 			status = COALESCE(?, status),
 			word_count_target = COALESCE(?, word_count_target),
+			owner_id = COALESCE(?, owner_id),
 			updated_at = ?
 		WHERE id = ?
-	`).run(body.title, body.subtitle, body.status, body.word_count_target, now, params.id);
+	`).run(body.title, body.subtitle, body.status, body.word_count_target, ownerId, now, params.id);
 
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ?').get(params.id);
 	return json(novel);

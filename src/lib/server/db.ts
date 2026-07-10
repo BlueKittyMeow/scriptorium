@@ -27,12 +27,44 @@ export function getDb(): Database.Database {
 
 		// Run schema
 		_db.exec(SCHEMA);
+
+		// Ownership-lite mini-migration (idempotent, runs every boot).
+		// Adds novels.owner_id for legacy databases created before the column
+		// existed, then backfills any NULL owners to the first archivist.
+		runOwnershipMigration(_db);
 	} catch (err) {
 		_db = null;
 		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
 	}
 
 	return _db;
+}
+
+/**
+ * Ownership-lite migration. Exported so tests can exercise it against a
+ * legacy database created without the owner_id column.
+ *
+ * 1. If novels.owner_id is missing, add it (nullable, references users).
+ * 2. Backfill any NULL owner to the oldest archivist. No-op when no
+ *    archivist exists yet (fresh setup) — the column simply stays NULL
+ *    until an archivist is created and the next boot backfills.
+ *
+ * Note: this is ownership *tagging* only. No permission enforcement rides
+ * on owner_id yet — any authenticated user may still edit any novel. The
+ * per-novel access-level matrix (docs/ux-and-stats-ideas.md §C.1) lands later.
+ */
+export function runOwnershipMigration(db: Database.Database): void {
+	const cols = db.prepare(`PRAGMA table_info(novels)`).all() as { name: string }[];
+	const hasOwner = cols.some((c) => c.name === 'owner_id');
+	if (!hasOwner) {
+		db.exec(`ALTER TABLE novels ADD COLUMN owner_id TEXT REFERENCES users(id)`);
+	}
+	// Idempotent backfill — no-op when no archivist exists or all novels already owned.
+	db.prepare(
+		`UPDATE novels
+		 SET owner_id = (SELECT id FROM users WHERE role = 'archivist' ORDER BY created_at LIMIT 1)
+		 WHERE owner_id IS NULL`
+	).run();
 }
 
 const SCHEMA = `
@@ -42,6 +74,7 @@ CREATE TABLE IF NOT EXISTS novels (
   subtitle TEXT,
   status TEXT DEFAULT 'draft',
   word_count_target INTEGER,
+  owner_id TEXT REFERENCES users(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

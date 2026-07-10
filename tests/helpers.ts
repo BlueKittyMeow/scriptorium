@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS novels (
   subtitle TEXT,
   status TEXT DEFAULT 'draft',
   word_count_target INTEGER,
+  owner_id TEXT REFERENCES users(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

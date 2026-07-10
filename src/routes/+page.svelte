@@ -1,12 +1,94 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ScrivProject } from '$lib/types.js';
+	import type { PageData } from './$types';
 
-	let novels: any[] = $state([]);
+	let { data }: { data: PageData } = $props();
+
+	// Novels are delivered by +page.server.ts (no client fetch on first paint —
+	// saves a round trip on cellular). loadNovels() re-fetches after
+	// create/import so the grid stays fresh without a full navigation.
+	// svelte-ignore state_referenced_locally
+	let novels: any[] = $state(data.novels ?? []);
 	let showNewNovelModal = $state(false);
 	let newNovelTitle = $state('');
-	let loading = $state(true);
+
+	// Current user (from the layout load). Drives archivist-only UI.
+	const currentUser = $derived(data.user);
+	const isArchivist = $derived(currentUser?.role === 'archivist');
+
+	// ─── Bookshelf toggle ────────────────────────────────────────────
+	const SHELF_KEY = 'scriptorium-shelf';
+	let selectedShelf = $state('all');
+
+	// Distinct owners present in the data, as chip descriptors.
+	const shelves = $derived.by(() => {
+		const seen = new Set<string>();
+		const owners: string[] = [];
+		for (const n of novels) {
+			if (n.owner_username && !seen.has(n.owner_username)) {
+				seen.add(n.owner_username);
+				owners.push(n.owner_username);
+			}
+		}
+		const mine = currentUser?.username;
+		// "Mine" first (if present), then the rest alphabetically.
+		owners.sort((a, b) => {
+			if (a === mine) return -1;
+			if (b === mine) return 1;
+			return a.localeCompare(b);
+		});
+		return [
+			{ key: 'all', label: 'All' },
+			...owners.map((u) => ({ key: u, label: u === mine ? 'Mine' : u }))
+		];
+	});
+
+	const filteredNovels = $derived(
+		selectedShelf === 'all'
+			? novels
+			: novels.filter((n) => n.owner_username === selectedShelf)
+	);
+
+	function selectShelf(key: string) {
+		selectedShelf = key;
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem(SHELF_KEY, key);
+		}
+	}
+
+	$effect(() => {
+		// Restore persisted shelf on mount; fall back to "All" if that owner is
+		// no longer present in the data.
+		if (typeof localStorage === 'undefined') return;
+		const saved = localStorage.getItem(SHELF_KEY);
+		if (saved && shelves.some((s) => s.key === saved)) {
+			selectedShelf = saved;
+		} else if (saved) {
+			selectedShelf = 'all';
+		}
+	});
+
+	// ─── Owner picker (archivist only) ──────────────────────────────
+	let usersList: { id: string; username: string; role: string }[] = $state([]);
+	let usersLoaded = $state(false);
+	let newNovelOwnerId = $state('');
+	let importOwnerId = $state('');
+
+	async function ensureUsersLoaded() {
+		// /api/admin/users is archivist-only — never call it for writers.
+		if (!isArchivist || usersLoaded) return;
+		try {
+			const res = await fetch('/api/admin/users');
+			if (res.ok) {
+				const body = await res.json();
+				usersList = body.users ?? [];
+				usersLoaded = true;
+			}
+		} catch {
+			// Non-fatal: owner picker simply won't populate; creation defaults to self.
+		}
+	}
 
 	// Import modal state machine
 	type ImportMode = 'idle' | 'scanning' | 'project_list' | 'importing_single' | 'importing_batch' | 'report_single' | 'report_batch';
@@ -31,23 +113,28 @@
 		importMode === 'scanning' || importMode === 'importing_single' || importMode === 'importing_batch'
 	);
 
-	onMount(async () => {
-		await loadNovels();
-	});
-
+	// Client refresh after create/import — re-fetch the same list the server load
+	// produced so the grid updates without a full navigation.
 	async function loadNovels() {
-		loading = true;
 		const res = await fetch('/api/novels');
 		novels = await res.json();
-		loading = false;
+	}
+
+	function openNewNovelModal() {
+		newNovelTitle = '';
+		newNovelOwnerId = currentUser?.id ?? '';
+		showNewNovelModal = true;
+		ensureUsersLoaded();
 	}
 
 	async function createNovel() {
 		if (!newNovelTitle.trim()) return;
+		const payload: Record<string, unknown> = { title: newNovelTitle.trim() };
+		if (isArchivist && newNovelOwnerId) payload.owner_id = newNovelOwnerId;
 		const res = await fetch('/api/novels', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title: newNovelTitle.trim() })
+			body: JSON.stringify(payload)
 		});
 		const novel = await res.json();
 		showNewNovelModal = false;
@@ -56,6 +143,8 @@
 	}
 
 	function openImportModal() {
+		importOwnerId = currentUser?.id ?? '';
+		ensureUsersLoaded();
 		// Reset all state on open (review fix #7)
 		importMode = 'idle';
 		importPath = '';
@@ -83,10 +172,12 @@
 		importError = null;
 		singleReport = null;
 		try {
+			const importPayload: Record<string, unknown> = { path: importPath.trim() };
+			if (isArchivist && importOwnerId) importPayload.owner_id = importOwnerId;
 			const res = await fetch('/api/import', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ path: importPath.trim() })
+				body: JSON.stringify(importPayload)
 			});
 			if (!res.ok) {
 				const err = await res.json();
@@ -167,10 +258,12 @@
 		batchProgress = { current: 0, total: paths.length, currentName: '' };
 
 		try {
+			const batchPayload: Record<string, unknown> = { paths };
+			if (isArchivist && importOwnerId) batchPayload.owner_id = importOwnerId;
 			const res = await fetch('/api/import/batch', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ paths })
+				body: JSON.stringify(batchPayload)
 			});
 			if (!res.ok) {
 				const err = await res.json();
@@ -223,21 +316,37 @@
 	</header>
 
 	<div class="actions">
-		<button class="btn btn-primary" onclick={() => showNewNovelModal = true}>New Novel</button>
+		<button class="btn btn-primary" onclick={openNewNovelModal}>New Novel</button>
 		<button class="btn btn-secondary" onclick={openImportModal}>Import .scriv</button>
 		<a class="btn btn-secondary" href="/novels/compare">Compare Drafts</a>
 	</div>
 
-	{#if loading}
-		<div class="empty-state">Loading...</div>
-	{:else if novels.length === 0}
+	{#if novels.length > 0 && shelves.length > 2}
+		<div class="shelf-toggle" role="tablist" aria-label="Filter novels by owner">
+			{#each shelves as shelf}
+				<button
+					class="shelf-chip"
+					class:active={selectedShelf === shelf.key}
+					role="tab"
+					aria-selected={selectedShelf === shelf.key}
+					onclick={() => selectShelf(shelf.key)}
+				>{shelf.label}</button>
+			{/each}
+		</div>
+	{/if}
+
+	{#if novels.length === 0}
 		<div class="empty-state">
 			<p>No novels yet.</p>
 			<p class="hint">Create a new novel or import a .scriv project to get started.</p>
 		</div>
+	{:else if filteredNovels.length === 0}
+		<div class="empty-state">
+			<p>No novels on this shelf.</p>
+		</div>
 	{:else}
 		<div class="novel-grid">
-			{#each novels as novel}
+			{#each filteredNovels as novel}
 				<a class="novel-card" href="/novels/{novel.id}" onclick={(e) => { if (renamingNovelId === novel.id) e.preventDefault(); }}>
 					<div class="novel-card-header">
 						{#if renamingNovelId === novel.id}
@@ -261,6 +370,9 @@
 					<div class="novel-meta">
 						<span class="status">{novel.status}</span>
 						<span class="word-count">{formatWordCount(novel.total_word_count || 0)}</span>
+						{#if selectedShelf === 'all' && novel.owner_username}
+							<span class="owner">{novel.owner_username}</span>
+						{/if}
 					</div>
 				</a>
 			{/each}
@@ -289,6 +401,16 @@
 					placeholder="/path/to/MyNovel.scriv or ~/Writing"
 					onkeydown={(e) => e.key === 'Enter' && handleImportAction()}
 				/>
+				{#if isArchivist}
+					<label class="owner-field">
+						<span>Owner</span>
+						<select bind:value={importOwnerId}>
+							{#each usersList as u}
+								<option value={u.id}>{u.id === currentUser?.id ? `${u.username} (you)` : u.username}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
 				<div class="modal-actions">
 					<button class="btn btn-secondary" onclick={closeImportModal}>Cancel</button>
 					{#if isSingleScrivPath}
@@ -448,6 +570,16 @@
 				placeholder="Novel title"
 				onkeydown={(e) => e.key === 'Enter' && createNovel()}
 			/>
+			{#if isArchivist}
+				<label class="owner-field">
+					<span>Owner</span>
+					<select bind:value={newNovelOwnerId}>
+						{#each usersList as u}
+							<option value={u.id}>{u.id === currentUser?.id ? `${u.username} (you)` : u.username}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
 			<div class="modal-actions">
 				<button class="btn btn-secondary" onclick={() => showNewNovelModal = false}>Cancel</button>
 				<button class="btn btn-primary" onclick={createNovel} disabled={!newNovelTitle.trim()}>Create</button>
@@ -617,6 +749,71 @@
 		padding: 0.1rem 0.5rem;
 		background: var(--bg-elevated);
 		border-radius: 3px;
+	}
+
+	.owner {
+		margin-left: auto;
+		color: var(--text-muted);
+		font-style: italic;
+	}
+
+	/* Bookshelf toggle — thumb-friendly segmented control */
+	.shelf-toggle {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		padding-bottom: 0.25rem;
+	}
+
+	.shelf-chip {
+		flex: 0 0 auto;
+		min-height: 44px;
+		padding: 0.5rem 1.1rem;
+		border-radius: 22px;
+		border: 1px solid var(--border-input);
+		background: var(--bg-surface);
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: all 0.15s;
+	}
+
+	.shelf-chip:hover {
+		background: var(--bg-elevated);
+	}
+
+	.shelf-chip.active {
+		background: var(--accent);
+		color: var(--text-on-accent);
+		border-color: var(--accent);
+	}
+
+	/* Owner picker in create/import modals */
+	.owner-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin-bottom: 1rem;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.owner-field select {
+		width: 100%;
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		font-size: 0.9rem;
+		background: var(--bg-surface);
+		color: var(--text);
+	}
+
+	.owner-field select:focus {
+		outline: none;
+		border-color: var(--accent);
 	}
 
 	/* Modals */
