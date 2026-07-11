@@ -928,6 +928,9 @@
 		<div class="novel-meta">
 			<span class="status-face">{novel.status}</span>
 			<span class="word-count">{formatWordCount(novel.total_word_count || 0)}</span>
+			{#if selectedShelf === 'all' && novel.owner_username}
+				<span class="owner">{novel.owner_username}</span>
+			{/if}
 		</div>
 	</div>
 {/snippet}
@@ -1968,7 +1971,9 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 		gap: 1rem;
-		align-items: end;
+		/* Top-align so plain cards and stacks (which carry a chip below)
+		   share a clean top edge; the baseline below closes the shelf. */
+		align-items: start;
 	}
 
 	.shelf-baseline {
@@ -2002,6 +2007,10 @@
 		background: none;
 		cursor: pointer;
 		text-align: left;
+		/* A <button> imposes its own UA font and color; without these the
+		   card face inside renders dimmer and smaller than sibling cards. */
+		font: inherit;
+		color: inherit;
 	}
 
 	/* Offset card edges peeking out behind the front card. */
@@ -2048,7 +2057,7 @@
 
 	.stack-chip {
 		display: inline-block;
-		margin-top: 1rem;
+		margin-top: 0.6rem;
 		font-size: 0.78rem;
 		color: var(--text-secondary);
 		background: var(--bg-elevated);
