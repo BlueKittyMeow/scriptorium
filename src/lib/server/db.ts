@@ -41,6 +41,14 @@ export function getDb(): Database.Database {
 		// and novels.collection_id / novels.stack_label for legacy databases
 		// so the library bookshelf (universes → eras → version stacks) works.
 		runCollectionsMigration(_db);
+
+		// Feedback mini-migration (idempotent). Adds the feedback table
+		// (Requests & Questions tab, /help) for legacy databases.
+		runFeedbackMigration(_db);
+
+		// Roadmap hearts mini-migration (idempotent). Adds the roadmap_hearts
+		// table (per-user "I want this sooner" toggle on the Roadmap tab).
+		runRoadmapHeartsMigration(_db);
 	} catch (err) {
 		_db = null;
 		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
@@ -210,6 +218,48 @@ export function backfillCollectionOwners(
 	}
 }
 
+/**
+ * Feedback migration (Requests & Questions tab, /help). Exported so tests
+ * can exercise it against a legacy database created before this feature
+ * existed. Idempotent (CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT
+ * EXISTS) — brand-new standalone table, so unlike the collections/ownership
+ * migrations there's no existing-table ALTER to guard.
+ */
+export function runFeedbackMigration(db: Database.Database): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS feedback (
+		  id TEXT PRIMARY KEY,
+		  author_id TEXT NOT NULL REFERENCES users(id),
+		  type TEXT NOT NULL CHECK(type IN ('feature','bug','question')),
+		  title TEXT NOT NULL,
+		  body TEXT,
+		  status TEXT NOT NULL DEFAULT 'open',
+		  response TEXT,
+		  created_at TEXT NOT NULL,
+		  updated_at TEXT NOT NULL
+		);
+	`);
+	db.exec(`CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at)`);
+}
+
+/**
+ * Roadmap hearts migration (Roadmap tab, /help). Exported so tests can
+ * exercise it against a legacy database created before this feature
+ * existed. One row per (item_key, user_id) — the composite primary key is
+ * the toggle: insert to heart, delete to un-heart. Idempotent, standalone
+ * new table, no ALTER needed.
+ */
+export function runRoadmapHeartsMigration(db: Database.Database): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS roadmap_hearts (
+		  item_key TEXT NOT NULL,
+		  user_id TEXT NOT NULL REFERENCES users(id),
+		  created_at TEXT NOT NULL,
+		  PRIMARY KEY (item_key, user_id)
+		);
+	`);
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS novels (
   id TEXT PRIMARY KEY,
@@ -323,4 +373,24 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_document ON snapshots(document_id);
 CREATE INDEX IF NOT EXISTS idx_compile_configs_novel ON compile_configs(novel_id);
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id TEXT PRIMARY KEY,
+  author_id TEXT NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL CHECK(type IN ('feature','bug','question')),
+  title TEXT NOT NULL,
+  body TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  response TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+
+CREATE TABLE IF NOT EXISTS roadmap_hearts (
+  item_key TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (item_key, user_id)
+);
 `;

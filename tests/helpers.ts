@@ -118,6 +118,26 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_document ON snapshots(document_id);
 CREATE INDEX IF NOT EXISTS idx_compile_configs_novel ON compile_configs(novel_id);
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id TEXT PRIMARY KEY,
+  author_id TEXT NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL CHECK(type IN ('feature','bug','question')),
+  title TEXT NOT NULL,
+  body TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  response TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+
+CREATE TABLE IF NOT EXISTS roadmap_hearts (
+  item_key TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (item_key, user_id)
+);
 `;
 
 /** Create a fresh in-memory database with full schema */

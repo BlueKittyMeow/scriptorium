@@ -1,3 +1,231 @@
+<script lang="ts">
+	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { ROADMAP, type RoadmapItem } from '$lib/roadmap-data.js';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	// data.user comes from the root +layout.server.ts load (no +page.server.ts
+	// of our own — the guide itself stays static; only the Requests &
+	// Questions and Roadmap tabs fetch, client-side, after mount).
+	const isArchivist = $derived(data.user?.role === 'archivist');
+
+	type Tab = 'guide' | 'roadmap' | 'requests';
+
+	// A hash into the guide (e.g. /help#snapshots) always means the Guide
+	// tab, scrolled to that section — checked before ?tab= so a stale query
+	// param can never fight a real anchor link. The fragment is never sent to
+	// the server, so page.url.hash reads empty during SSR (falling through to
+	// ?tab=, which SSRs correctly) and only takes effect once the client has
+	// the full URL — at which point the default 'guide' is what the browser's
+	// native hash-scroll needs anyway, so there's nothing to flicker.
+	function initialTab(): Tab {
+		if (page.url.hash) return 'guide';
+		const t = page.url.searchParams.get('tab');
+		return t === 'roadmap' || t === 'requests' ? t : 'guide';
+	}
+	let activeTab = $state<Tab>(initialTab());
+
+	function selectTab(tab: Tab) {
+		activeTab = tab;
+		if (!browser) return;
+		const url = new URL(location.href);
+		url.hash = '';
+		if (tab === 'guide') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', tab);
+		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+
+	// ─── Roadmap ────────────────────────────────────────────────────
+	const ROADMAP_GROUPS: { status: RoadmapItem['status']; heading: string }[] = [
+		{ status: 'shipped', heading: 'Recently shipped' },
+		{ status: 'next', heading: 'Up next' },
+		{ status: 'planned', heading: 'Planned' },
+		{ status: 'someday', heading: 'Someday / ideas' }
+	];
+	function itemsFor(status: RoadmapItem['status']) {
+		return ROADMAP.filter((i) => i.status === status);
+	}
+	function formatShipped(ym?: string) {
+		if (!ym) return '';
+		const [y, m] = ym.split('-');
+		const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+		return `${months[Number(m) - 1]} ${y}`;
+	}
+
+	// Hearts ("I want this sooner"). Loaded lazily when the Roadmap tab is
+	// first opened; toggling refetches rather than trying to keep an
+	// optimistic local count in sync with other people's hearts.
+	let heartRows = $state<{ item_key: string; user_id: string; username: string }[]>([]);
+	let heartsLoaded = $state(false);
+	let heartBusy = $state<Record<string, boolean>>({});
+
+	async function loadHearts() {
+		try {
+			const res = await fetch('/api/roadmap/hearts');
+			if (res.ok) heartRows = await res.json();
+		} finally {
+			heartsLoaded = true;
+		}
+	}
+	function heartCount(key: string) {
+		return heartRows.filter((r) => r.item_key === key).length;
+	}
+	function heartedByMe(key: string) {
+		return heartRows.some((r) => r.item_key === key && r.user_id === data.user?.id);
+	}
+	async function toggleHeart(key: string) {
+		if (heartBusy[key]) return;
+		heartBusy[key] = true;
+		try {
+			const res = await fetch('/api/roadmap/hearts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ key })
+			});
+			if (res.ok) await loadHearts();
+		} finally {
+			heartBusy[key] = false;
+		}
+	}
+
+	// ─── Requests & Questions (feedback) ───────────────────────────
+	interface FeedbackItem {
+		id: string;
+		author_id: string;
+		author_username: string;
+		type: 'feature' | 'bug' | 'question';
+		title: string;
+		body: string | null;
+		status: string;
+		response: string | null;
+		created_at: string;
+		updated_at: string;
+	}
+
+	// Mirrors src/lib/server/validate.ts's FEEDBACK_TYPES/FEEDBACK_STATUSES —
+	// a client component can't import from $lib/server, so the vocabulary is
+	// duplicated here, same convention as NOVEL_STATUSES in the library page.
+	const FEEDBACK_TYPE_OPTIONS: { value: FeedbackItem['type']; label: string }[] = [
+		{ value: 'feature', label: 'Feature request' },
+		{ value: 'bug', label: 'Bug report' },
+		{ value: 'question', label: 'Question' }
+	];
+	const FEEDBACK_STATUSES = ['open', 'planned', 'in-progress', 'done', 'declined', 'answered'];
+
+	function typeLabel(type: string) {
+		return FEEDBACK_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type;
+	}
+	function statusLabel(status: string) {
+		return status.replace(/-/g, ' ');
+	}
+	function formatDate(iso: string) {
+		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
+
+	let feedbackItems = $state<FeedbackItem[]>([]);
+	let feedbackLoaded = $state(false);
+	let feedbackLoading = $state(false);
+	let feedbackError = $state('');
+
+	async function loadFeedback() {
+		feedbackLoading = true;
+		feedbackError = '';
+		try {
+			const res = await fetch('/api/feedback');
+			if (!res.ok) throw new Error('failed');
+			feedbackItems = await res.json();
+			feedbackLoaded = true;
+			// Seed the archivist inline-edit state for any newly-seen item so
+			// the status select/response textarea start at the current values
+			// (done here, not in the template, to avoid mutating state mid-render).
+			for (const item of feedbackItems) {
+				if (!(item.id in editStatus)) editStatus[item.id] = item.status;
+				if (!(item.id in editResponse)) editResponse[item.id] = item.response ?? '';
+			}
+		} catch {
+			feedbackError = "Couldn't load requests — try again in a moment.";
+		} finally {
+			feedbackLoading = false;
+		}
+	}
+
+	// Submit form
+	let newType = $state<FeedbackItem['type']>('feature');
+	let newTitle = $state('');
+	let newBody = $state('');
+	let submitting = $state(false);
+	let submitError = $state('');
+
+	async function submitFeedback(e: Event) {
+		e.preventDefault();
+		if (!newTitle.trim() || submitting) return;
+		submitting = true;
+		submitError = '';
+		try {
+			const res = await fetch('/api/feedback', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ type: newType, title: newTitle.trim(), body: newBody.trim() || undefined })
+			});
+			if (!res.ok) throw new Error('failed');
+			newTitle = '';
+			newBody = '';
+			newType = 'feature';
+			await loadFeedback();
+		} catch {
+			submitError = "Couldn't send that — try again in a moment.";
+		} finally {
+			submitting = false;
+		}
+	}
+
+	// Archivist inline edit: status select + response textarea per item.
+	let editStatus = $state<Record<string, string>>({});
+	let editResponse = $state<Record<string, string>>({});
+	let savingId = $state<string | null>(null);
+
+	async function saveItem(item: FeedbackItem) {
+		savingId = item.id;
+		try {
+			await fetch(`/api/feedback/${item.id}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					status: editStatus[item.id] ?? item.status,
+					response: editResponse[item.id]?.trim() ? editResponse[item.id] : null
+				})
+			});
+			await loadFeedback();
+		} finally {
+			savingId = null;
+		}
+	}
+
+	// Writer reply-on-question: sets response + status: 'answered'.
+	let replyOpenFor = $state<string | null>(null);
+	let replyDrafts = $state<Record<string, string>>({});
+
+	async function sendReply(item: FeedbackItem) {
+		const text = replyDrafts[item.id]?.trim();
+		if (!text) return;
+		await fetch(`/api/feedback/${item.id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ status: 'answered', response: text })
+		});
+		replyOpenFor = null;
+		await loadFeedback();
+	}
+
+	$effect(() => {
+		if (activeTab === 'roadmap' && !heartsLoaded) loadHearts();
+		if (activeTab === 'requests' && !feedbackLoaded && !feedbackLoading) loadFeedback();
+	});
+</script>
+
 <svelte:head>
 	<title>User Guide — Scriptorium</title>
 </svelte:head>
@@ -9,6 +237,13 @@
 		<p class="subtitle">How Scriptorium works, from first novel to finished export</p>
 	</header>
 
+	<nav class="tabs" aria-label="Help sections">
+		<button class:active={activeTab === 'guide'} onclick={() => selectTab('guide')}>Guide</button>
+		<button class:active={activeTab === 'roadmap'} onclick={() => selectTab('roadmap')}>Roadmap</button>
+		<button class:active={activeTab === 'requests'} onclick={() => selectTab('requests')}>Requests &amp; Questions</button>
+	</nav>
+
+{#if activeTab === 'guide'}
 	<nav class="toc" aria-label="Table of contents">
 		<h2>Contents</h2>
 		<ul>
@@ -239,6 +474,7 @@
 			<li>On a phone, the binder and snapshot panel slide over the page rather than squeezing beside it — tap the dimmed background to dismiss the binder.</li>
 			<li>Take a manual snapshot before a big cut. It costs nothing, and the ⇄ compare will show you exactly what you changed afterwards.</li>
 			<li>Select a passage to see its word count next to the document total in the footer.</li>
+			<li>Curious what's coming? See the <em>Roadmap</em> tab. Something broken or missing? <em>Requests &amp; Questions</em>.</li>
 		</ul>
 	</section>
 
@@ -254,6 +490,139 @@
 			<li><strong>Admin panel</strong> (the <em>Admin</em> link in the top bar): manage users and passwords, view and restore — or permanently purge — trashed items across all novels, review storage statistics, and read the audit log of account and administrative actions.</li>
 		</ul>
 	</section>
+
+{:else if activeTab === 'roadmap'}
+	<div class="roadmap-tab">
+		<p class="tab-intro">
+			What's shipped, what's next, and what's just an idea so far — heart
+			anything you'd like to see sooner.
+		</p>
+		{#each ROADMAP_GROUPS as group (group.status)}
+			{@const items = itemsFor(group.status)}
+			{#if items.length > 0}
+				<section class="roadmap-group">
+					<h2>{group.heading}</h2>
+					<ul class="roadmap-list">
+						{#each items as item (item.key)}
+							<li class="roadmap-item">
+								<div class="roadmap-item-head">
+									<span class="roadmap-title">{item.title}</span>
+									<span class="roadmap-chip roadmap-chip-{item.status}">
+										{item.status === 'shipped' ? formatShipped(item.shipped) : group.heading}
+									</span>
+								</div>
+								{#if item.note}<p class="roadmap-note">{item.note}</p>{/if}
+								{#if item.status !== 'shipped'}
+									<button
+										class="heart-btn"
+										class:hearted={heartedByMe(item.key)}
+										disabled={heartBusy[item.key]}
+										onclick={() => toggleHeart(item.key)}
+										aria-pressed={heartedByMe(item.key)}
+										title="I want this sooner"
+									>
+										<span class="heart-icon">{heartedByMe(item.key) ? '♥' : '♡'}</span>
+										<span class="heart-count">{heartCount(item.key)}</span>
+									</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+		{/each}
+	</div>
+{:else if activeTab === 'requests'}
+	<div class="requests-tab">
+		<form class="feedback-form" onsubmit={submitFeedback}>
+			<h2>Tell us something</h2>
+			<div class="form-row">
+				<label>
+					Type
+					<select bind:value={newType}>
+						{#each FEEDBACK_TYPE_OPTIONS as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</label>
+			</div>
+			<div class="form-row">
+				<label>
+					Title
+					<input type="text" bind:value={newTitle} maxlength="200" placeholder="Short summary" required />
+				</label>
+			</div>
+			<div class="form-row">
+				<label>
+					Details <span class="optional">(optional)</span>
+					<textarea bind:value={newBody} rows="3" placeholder="Anything else that would help"></textarea>
+				</label>
+			</div>
+			{#if submitError}<p class="form-error">{submitError}</p>{/if}
+			<button type="submit" disabled={submitting || !newTitle.trim()}>
+				{submitting ? 'Sending…' : 'Send'}
+			</button>
+		</form>
+
+		<div class="feedback-list">
+			{#if feedbackLoading}
+				<p class="feedback-status">Loading…</p>
+			{:else if feedbackError}
+				<p class="feedback-status feedback-status-error">{feedbackError}</p>
+			{:else if feedbackItems.length === 0}
+				<p class="empty-state">Nothing here yet — found a bug or wish something existed? Tell us above.</p>
+			{:else}
+				{#each feedbackItems as item (item.id)}
+					<div class="feedback-item">
+						<div class="feedback-item-head">
+							<span class="type-badge type-badge-{item.type}">{typeLabel(item.type)}</span>
+							<span class="status-chip status-chip-{item.status}">{statusLabel(item.status)}</span>
+						</div>
+						<h3>{item.title}</h3>
+						{#if item.body}<p class="feedback-body">{item.body}</p>{/if}
+						<p class="feedback-meta">{item.author_username} · {formatDate(item.created_at)}</p>
+						{#if item.response}
+							<blockquote class="feedback-response">{item.response}</blockquote>
+						{/if}
+
+						{#if isArchivist}
+							<div class="archivist-controls">
+								<label>
+									Status
+									<select class="status-select" bind:value={editStatus[item.id]}>
+										{#each FEEDBACK_STATUSES as s (s)}
+											<option value={s}>{statusLabel(s)}</option>
+										{/each}
+									</select>
+								</label>
+								<textarea
+									bind:value={editResponse[item.id]}
+									rows="2"
+									placeholder="Write a reply…"
+								></textarea>
+								<button onclick={() => saveItem(item)} disabled={savingId === item.id}>
+									{savingId === item.id ? 'Saving…' : 'Save'}
+								</button>
+							</div>
+						{:else if item.type === 'question'}
+							<div class="reply-affordance">
+								{#if replyOpenFor === item.id}
+									<textarea bind:value={replyDrafts[item.id]} rows="2" placeholder="Your reply…"></textarea>
+									<button onclick={() => sendReply(item)}>Send reply</button>
+									<button class="cancel-btn" onclick={() => (replyOpenFor = null)}>Cancel</button>
+								{:else}
+									<button class="reply-btn" onclick={() => { replyOpenFor = item.id; replyDrafts[item.id] = ''; }}>
+										Reply
+									</button>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			{/if}
+		</div>
+	</div>
+{/if}
 </div>
 
 <style>
@@ -289,6 +658,344 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		margin-top: 0.25rem;
+	}
+
+	/* Tab nav — same idiom as the admin panel's .tabs (src/routes/admin/+page.svelte). */
+	.tabs {
+		display: flex;
+		gap: 0;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: 2rem;
+	}
+
+	.tabs button {
+		padding: 0.5rem 1rem;
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.tabs button.active {
+		color: var(--text-heading);
+		border-bottom-color: var(--accent);
+	}
+
+	.tabs button:hover {
+		color: var(--text);
+	}
+
+	@media (max-width: 600px) {
+		.tabs {
+			overflow-x: auto;
+			flex-wrap: nowrap;
+		}
+
+		.tabs button {
+			flex: 0 0 auto;
+		}
+	}
+
+	/* ─── Roadmap tab ────────────────────────────────────────────── */
+
+	.tab-intro {
+		color: var(--text-secondary);
+		font-style: italic;
+		margin-bottom: 2rem;
+	}
+
+	.roadmap-group {
+		margin-bottom: 2rem;
+	}
+
+	.roadmap-group h2 {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--text-heading);
+		border-bottom: 1px solid var(--border);
+		padding-bottom: 0.35rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.roadmap-list {
+		list-style: none;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.roadmap-item {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 0.75rem 1rem;
+	}
+
+	.roadmap-item-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.roadmap-title {
+		font-weight: 600;
+		color: var(--text-heading);
+	}
+
+	.roadmap-note {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		margin: 0.35rem 0 0;
+	}
+
+	.roadmap-chip {
+		font-size: 0.7rem;
+		white-space: nowrap;
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+	}
+
+	.roadmap-chip-shipped {
+		color: var(--success-text);
+		background: var(--success-bg);
+	}
+
+	.roadmap-chip-next {
+		color: var(--warning-text);
+		background: var(--warning-bg);
+	}
+
+	.roadmap-chip-planned,
+	.roadmap-chip-someday {
+		color: var(--text-muted);
+		background: var(--accent-bg);
+	}
+
+	.heart-btn {
+		margin-top: 0.5rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		background: none;
+		border: 1px solid var(--border-input);
+		border-radius: 999px;
+		padding: 0.15rem 0.6rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: 0.85rem;
+	}
+
+	.heart-btn:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.heart-btn.hearted {
+		color: var(--accent);
+		border-color: var(--accent);
+		background: var(--accent-bg);
+	}
+
+	.heart-icon {
+		font-size: 1rem;
+	}
+
+	/* ─── Requests & Questions tab ──────────────────────────────── */
+
+	.feedback-form {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 1.25rem;
+		margin-bottom: 2rem;
+	}
+
+	.feedback-form h2 {
+		font-size: 1.1rem;
+		color: var(--text-heading);
+		margin-bottom: 0.75rem;
+	}
+
+	.form-row {
+		margin-bottom: 0.75rem;
+	}
+
+	.form-row label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.form-row .optional {
+		color: var(--text-muted);
+		font-weight: normal;
+	}
+
+	.feedback-form select,
+	.feedback-form input,
+	.feedback-form textarea,
+	.archivist-controls select,
+	.archivist-controls textarea,
+	.reply-affordance textarea {
+		background: var(--bg);
+		border: 1px solid var(--border-input);
+		border-radius: 4px;
+		color: var(--text);
+		padding: 0.4rem 0.5rem;
+		font-size: 16px;
+		font-family: inherit;
+	}
+
+	.feedback-form button,
+	.archivist-controls button,
+	.reply-affordance button {
+		background: var(--accent);
+		color: var(--text-on-accent);
+		border: none;
+		border-radius: 4px;
+		padding: 0.4rem 0.9rem;
+		cursor: pointer;
+		font-size: 0.85rem;
+	}
+
+	.feedback-form button:disabled,
+	.archivist-controls button:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.form-error {
+		color: var(--error-text);
+		font-size: 0.85rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.feedback-status {
+		color: var(--text-secondary);
+	}
+
+	.feedback-status-error {
+		color: var(--error-text);
+	}
+
+	.empty-state {
+		color: var(--text-secondary);
+		font-style: italic;
+	}
+
+	.feedback-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.feedback-item {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 1rem 1.25rem;
+	}
+
+	.feedback-item h3 {
+		color: var(--text-heading);
+		margin: 0.4rem 0;
+	}
+
+	.feedback-item-head {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.type-badge {
+		font-size: 0.7rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+		background: var(--accent-bg);
+		color: var(--text-muted);
+	}
+
+	.status-chip {
+		font-size: 0.7rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		background: var(--accent-bg);
+		color: var(--text-muted);
+	}
+
+	.status-chip-open {
+		background: var(--accent-bg);
+		color: var(--accent);
+	}
+
+	.status-chip-planned,
+	.status-chip-in-progress {
+		background: var(--warning-bg);
+		color: var(--warning-text);
+	}
+
+	.status-chip-done,
+	.status-chip-answered {
+		background: var(--success-bg);
+		color: var(--success-text);
+	}
+
+	.status-chip-declined {
+		background: var(--error-bg);
+		color: var(--error-text);
+	}
+
+	.feedback-body {
+		line-height: 1.5;
+	}
+
+	.feedback-meta {
+		color: var(--text-muted);
+		font-size: 0.8rem;
+	}
+
+	.feedback-response {
+		margin: 0.5rem 0 0;
+		padding: 0.5rem 0.75rem;
+		border-left: 3px solid var(--accent);
+		background: var(--bg-elevated);
+		color: var(--text-secondary);
+		font-style: italic;
+	}
+
+	.archivist-controls,
+	.reply-affordance {
+		margin-top: 0.75rem;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+
+	.archivist-controls label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.archivist-controls textarea,
+	.reply-affordance textarea {
+		flex: 1 1 200px;
+		min-width: 160px;
+	}
+
+	.reply-btn,
+	.cancel-btn {
+		background: none;
+		border: 1px solid var(--border-input);
+		color: var(--text-secondary);
 	}
 
 	.toc {

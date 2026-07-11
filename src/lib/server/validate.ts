@@ -147,6 +147,68 @@ export function assertValidStackLabel(value: unknown): string {
 	return value.trim();
 }
 
+/**
+ * Feedback (Requests & Questions) type vocabulary — mirrors the DB CHECK
+ * constraint on feedback.type (a fixed, small set; unlike status below, a
+ * migration is an acceptable cost if this ever needs to grow).
+ */
+export const FEEDBACK_TYPES = ['feature', 'bug', 'question'] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
+/**
+ * Validate a feedback `type`. Required, must be one of FEEDBACK_TYPES.
+ * Throws a 400 otherwise.
+ */
+export function assertValidFeedbackType(type: unknown): FeedbackType {
+	if (typeof type !== 'string' || !(FEEDBACK_TYPES as readonly string[]).includes(type)) {
+		throw error(400, `type must be one of: ${FEEDBACK_TYPES.join(', ')}`);
+	}
+	return type as FeedbackType;
+}
+
+/**
+ * Feedback status vocabulary. Deliberately validated here rather than a DB
+ * CHECK constraint (unlike feedback.type) so the set can grow without a
+ * migration — same rationale as assertValidNovelStatus/NOVEL_STATUSES.
+ */
+export const FEEDBACK_STATUSES = [
+	'open',
+	'planned',
+	'in-progress',
+	'done',
+	'declined',
+	'answered'
+] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+/**
+ * Validate a feedback `status`. Required (call only when the key is
+ * present), must be one of FEEDBACK_STATUSES. Throws a 400 otherwise.
+ */
+export function assertValidFeedbackStatus(status: unknown): FeedbackStatus {
+	if (typeof status !== 'string' || !(FEEDBACK_STATUSES as readonly string[]).includes(status)) {
+		throw error(400, `status must be one of: ${FEEDBACK_STATUSES.join(', ')}`);
+	}
+	return status as FeedbackStatus;
+}
+
+export const MAX_FEEDBACK_TITLE_LENGTH = 200;
+
+/**
+ * Validate a feedback `title`. Required, non-empty after trim, capped at
+ * MAX_FEEDBACK_TITLE_LENGTH characters. Returns the trimmed value.
+ */
+export function assertValidFeedbackTitle(title: unknown): string {
+	if (typeof title !== 'string' || !title.trim()) {
+		throw error(400, 'title is required');
+	}
+	const trimmed = title.trim();
+	if (trimmed.length > MAX_FEEDBACK_TITLE_LENGTH) {
+		throw error(400, `title must be ${MAX_FEEDBACK_TITLE_LENGTH} characters or fewer`);
+	}
+	return trimmed;
+}
+
 /** Sanitize FTS5 snippet output — only allow <mark> and </mark> tags. */
 export function sanitizeSnippet(snippet: string): string {
 	// Replace <mark> and </mark> with placeholders, escape everything else, restore marks

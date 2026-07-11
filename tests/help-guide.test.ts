@@ -36,11 +36,9 @@ describe('help route: page exists with table of contents', () => {
 		}
 	});
 
-	it('should not need server code or DB access (static content only)', async () => {
+	it('should not need a +page.server.ts (the guide itself is still static; the Requests & Questions and Roadmap tabs fetch client-side)', async () => {
 		const fs = await import('fs');
 		expect(fs.existsSync('src/routes/help/+page.server.ts')).toBe(false);
-		const source = fs.readFileSync(HELP_PATH, 'utf-8');
-		expect(source).not.toContain('fetch(');
 	});
 });
 
