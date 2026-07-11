@@ -1450,6 +1450,10 @@
 	}
 
 	.novel-card {
+		/* The card is an <a>; inside .card-wrap it is no longer a grid item
+		   (which used to blockify it), so it must be block explicitly or the
+		   inline box fragments around its block children. */
+		display: block;
 		background: var(--bg-surface);
 		border: 1px solid var(--border);
 		border-radius: 8px;
