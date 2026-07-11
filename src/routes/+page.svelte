@@ -2,6 +2,13 @@
 	import { goto } from '$app/navigation';
 	import type { ScrivProject, BundleImportReport } from '$lib/types.js';
 	import type { PageData } from './$types';
+	import {
+		ownerSpaces,
+		topLevelsFor,
+		childrenOfIn,
+		moveTargetsFor,
+		canFileOn
+	} from '$lib/shelf-scope.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -25,16 +32,20 @@
 	const SHELF_KEY = 'scriptorium-shelf';
 	let selectedShelf = $state('all');
 
-	// Distinct owners present in the data, as chip descriptors.
+	// Distinct owners present in the data, as chip descriptors. Owners are
+	// drawn from novels AND collections — an owner whose space is all shelves
+	// and no books yet (the archivist's day one) still gets a filter chip.
 	const shelves = $derived.by(() => {
 		const seen = new Set<string>();
 		const owners: string[] = [];
-		for (const n of novels) {
-			if (n.owner_username && !seen.has(n.owner_username)) {
-				seen.add(n.owner_username);
-				owners.push(n.owner_username);
+		const consider = (u: string | null | undefined) => {
+			if (u && !seen.has(u)) {
+				seen.add(u);
+				owners.push(u);
 			}
-		}
+		};
+		for (const n of novels) consider(n.owner_username);
+		for (const c of collections) consider(c.owner_username);
 		const mine = currentUser?.username;
 		// "Mine" first (if present), then the rest alphabetically.
 		owners.sort((a, b) => {
@@ -439,29 +450,42 @@
 		if (res.ok) collections = await res.json();
 	}
 
-	const bySortOrder = (a: any, b: any) => a.sort_order - b.sort_order;
 	const byUpdatedDesc = (a: any, b: any) => String(b.updated_at).localeCompare(String(a.updated_at));
 
-	// Top-level collections ("universes") and their child "eras".
-	const topLevels = $derived([...collections].filter((c) => c.parent_id === null).sort(bySortOrder));
+	// Child "eras" of a universe (delegates to the pure helper).
 	function childrenOf(id: string) {
-		return [...collections].filter((c) => c.parent_id === id).sort(bySortOrder);
+		return childrenOfIn(collections, id);
+	}
+
+	// ─── Per-owner shelf spaces (v2.1) ──────────────────────────────────
+	// Every collection belongs to one user's shelf space. Under an owner
+	// filter only that owner's space is on display; under All, each owner's
+	// shelf trees render in turn (kicker above each when 2+ owners have
+	// shelves), then a combined Unsorted. Structure is always visible within
+	// a displayed space — empty shelves included (v2 semantics per space).
+	const shelfSpaces = $derived(ownerSpaces(collections, currentUser?.username));
+	const displayedSpaces = $derived.by(() => {
+		if (selectedShelf === 'all') return shelfSpaces;
+		const ownerId = ownerIdForUsername(selectedShelf);
+		return shelfSpaces.filter((s) => (s.ownerId ?? null) === ownerId);
+	});
+	const showKickers = $derived(selectedShelf === 'all' && shelfSpaces.length > 1);
+	const hasVisibleShelves = $derived(
+		displayedSpaces.some((s) => topLevelsFor(collections, s.ownerId).length > 0)
+	);
+
+	// Map a shelf-chip username back to an owner id (novels carry both; a
+	// bookless owner is still findable through her collections).
+	function ownerIdForUsername(username: string): string | null {
+		const n = novels.find((x) => x.owner_username === username);
+		if (n) return n.owner_id ?? null;
+		const c = collections.find((x: any) => x.owner_username === username);
+		return c ? (c.owner_id ?? null) : null;
 	}
 
 	// Owner-filtered novels assigned to a given collection (null = Unsorted).
 	function novelsIn(collectionId: string | null) {
 		return filteredNovels.filter((n) => (n.collection_id ?? null) === collectionId);
-	}
-
-	// A universe is worth rendering when unfiltered (structure/drop target), or,
-	// under an owner filter, only when it holds matching cards directly or in an era.
-	function universeVisible(top: any): boolean {
-		if (selectedShelf === 'all') return true;
-		if (novelsIn(top.id).length > 0) return true;
-		return childrenOf(top.id).some((era) => novelsIn(era.id).length > 0);
-	}
-	function eraVisible(era: any): boolean {
-		return selectedShelf === 'all' || novelsIn(era.id).length > 0;
 	}
 
 	// Build the ordered shelf items for a collection: standalone cards plus
@@ -567,23 +591,30 @@
 	// HTML5 drag-and-drop (desktop enhancement). The card <a> is draggable;
 	// dropping onto a universe/era header assigns the collection. dragOccurred
 	// suppresses the card's own navigation for the click that follows a drag.
+	// v2.1: a header belonging to a different owner than the dragged card is
+	// not a legal target — dragover skips preventDefault, so it never
+	// highlights and the drop never fires (no request is sent).
 	let draggedNovelId = $state<string | null>(null);
+	let draggedNovelOwnerId = $state<string | null>(null);
 	let dropTargetKey = $state<string | null>(null);
 	let dragOccurred = false;
 
-	function onCardDragStart(e: DragEvent, novelId: string) {
-		draggedNovelId = novelId;
+	function onCardDragStart(e: DragEvent, novel: any) {
+		draggedNovelId = novel.id;
+		draggedNovelOwnerId = novel.owner_id ?? null;
 		dragOccurred = true;
 		if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
 	}
 	function onCardDragEnd() {
 		draggedNovelId = null;
+		draggedNovelOwnerId = null;
 		dropTargetKey = null;
 		// Reset just after the click that a drag-release can synthesize.
 		setTimeout(() => (dragOccurred = false), 60);
 	}
-	function onHeaderDragOver(e: DragEvent, key: string) {
+	function onHeaderDragOver(e: DragEvent, key: string, collection: any | null) {
 		if (!draggedNovelId) return;
+		if (!canFileOn(collection, draggedNovelOwnerId)) return;
 		e.preventDefault();
 		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
 		dropTargetKey = key;
@@ -591,12 +622,14 @@
 	function onHeaderDragLeave(key: string) {
 		if (dropTargetKey === key) dropTargetKey = null;
 	}
-	function onHeaderDrop(e: DragEvent, collectionId: string | null, key: string) {
+	function onHeaderDrop(e: DragEvent, collection: any | null, key: string) {
 		e.preventDefault();
 		const id = draggedNovelId;
+		const legal = canFileOn(collection, draggedNovelOwnerId);
 		dropTargetKey = null;
 		draggedNovelId = null;
-		if (id) assignCollection(id, collectionId);
+		draggedNovelOwnerId = null;
+		if (id && legal) assignCollection(id, collection?.id ?? null);
 	}
 	function suppressCardNav(e: MouseEvent, novelId: string) {
 		if (dragOccurred || renamingNovelId === novelId || openMenuNovelId === novelId) e.preventDefault();
@@ -613,25 +646,45 @@
 	}
 
 	// ─── Manage shelves modal ───────────────────────────────────────────
+	// The modal manages ONE owner's shelf space at a time (v2.1). Archivists
+	// open on the filtered owner's space (their own under All) and can switch
+	// spaces with a small select; writers always manage their own space and
+	// never see the switcher (the server would force self-ownership anyway).
 	let showManageModal = $state(false);
+	let manageOwnerId = $state('');
 	let newCollTitle = $state('');
 	let newCollParent = $state('');
 	let renamingCollId = $state<string | null>(null);
 	let renamingCollTitle = $state('');
 	let deleteConfirmColl: any = $state(null);
 
+	const manageTopLevels = $derived(topLevelsFor(collections, manageOwnerId || null));
+
 	function openManageModal() {
 		newCollTitle = '';
 		newCollParent = '';
 		renamingCollId = null;
 		deleteConfirmColl = null;
+		manageOwnerId =
+			(isArchivist && selectedShelf !== 'all' ? ownerIdForUsername(selectedShelf) : null) ??
+			currentUser?.id ??
+			'';
+		ensureUsersLoaded();
 		showManageModal = true;
+	}
+
+	// Switching spaces mid-edit: drop transient state that belonged to the
+	// previous owner's space (pending rename, delete confirm, parent pick).
+	function onManageOwnerSwitch() {
+		renamingCollId = null;
+		deleteConfirmColl = null;
+		newCollParent = '';
 	}
 
 	async function createCollection() {
 		const title = newCollTitle.trim();
 		if (!title) return;
-		const payload: Record<string, unknown> = { title };
+		const payload: Record<string, unknown> = { title, owner_id: manageOwnerId };
 		if (newCollParent) payload.parent_id = newCollParent;
 		await fetch('/api/collections', {
 			method: 'POST',
@@ -656,8 +709,9 @@
 	}
 
 	// Reorder among siblings by swapping sort_order with the adjacent sibling.
+	// Top-level siblings are scoped to the managed owner's space.
 	async function moveCollection(coll: any, dir: -1 | 1) {
-		const siblings = coll.parent_id === null ? topLevels : childrenOf(coll.parent_id);
+		const siblings = coll.parent_id === null ? manageTopLevels : childrenOf(coll.parent_id);
 		const idx = siblings.findIndex((s) => s.id === coll.id);
 		const swapWith = siblings[idx + dir];
 		if (!swapWith) return;
@@ -719,28 +773,31 @@
 		</div>
 	{/if}
 
-	{#if novels.length === 0}
+	{#if novels.length === 0 && !hasVisibleShelves}
 		<div class="empty-state">
 			<p>No novels yet.</p>
 			<p class="hint">Create a new novel or import a .scriv project to get started.</p>
 		</div>
-	{:else if filteredNovels.length === 0}
+	{:else if filteredNovels.length === 0 && !hasVisibleShelves}
 		<div class="empty-state">
 			<p>No novels on this shelf.</p>
 		</div>
 	{:else}
 		<div class="bookshelf">
-			{#each topLevels as top (top.id)}
-				{#if universeVisible(top)}
+			{#each displayedSpaces as space (space.ownerId ?? '__unowned__')}
+				{#if showKickers && topLevelsFor(collections, space.ownerId).length > 0}
+					<p class="owner-kicker">{space.ownerUsername ?? 'Unclaimed shelves'}</p>
+				{/if}
+				{#each topLevelsFor(collections, space.ownerId) as top (top.id)}
 					<section class="shelf-section">
 						<button
 							type="button"
 							class="collection-header universe-header"
 							class:drop-target={dropTargetKey === top.id}
 							onclick={() => toggleCollapse(top.id)}
-							ondragover={(e) => onHeaderDragOver(e, top.id)}
+							ondragover={(e) => onHeaderDragOver(e, top.id, top)}
 							ondragleave={() => onHeaderDragLeave(top.id)}
-							ondrop={(e) => onHeaderDrop(e, top.id, top.id)}
+							ondrop={(e) => onHeaderDrop(e, top, top.id)}
 						>
 							<span class="chevron">{isCollapsed(top.id) ? '▸' : '▾'}</span>
 							<span class="collection-title">{top.title}</span>
@@ -750,29 +807,27 @@
 								{@render shelf(shelfItems(novelsIn(top.id)), top.id)}
 							{/if}
 							{#each childrenOf(top.id) as era (era.id)}
-								{#if eraVisible(era)}
-									<div class="era-block">
-										<button
-											type="button"
-											class="collection-header era-header"
-											class:drop-target={dropTargetKey === era.id}
-											onclick={() => toggleCollapse(era.id)}
-											ondragover={(e) => onHeaderDragOver(e, era.id)}
-											ondragleave={() => onHeaderDragLeave(era.id)}
-											ondrop={(e) => onHeaderDrop(e, era.id, era.id)}
-										>
-											<span class="chevron">{isCollapsed(era.id) ? '▸' : '▾'}</span>
-											<span class="collection-title">{era.title}</span>
-										</button>
-										{#if !isCollapsed(era.id) && novelsIn(era.id).length > 0}
-											{@render shelf(shelfItems(novelsIn(era.id)), era.id)}
-										{/if}
-									</div>
-								{/if}
+								<div class="era-block">
+									<button
+										type="button"
+										class="collection-header era-header"
+										class:drop-target={dropTargetKey === era.id}
+										onclick={() => toggleCollapse(era.id)}
+										ondragover={(e) => onHeaderDragOver(e, era.id, era)}
+										ondragleave={() => onHeaderDragLeave(era.id)}
+										ondrop={(e) => onHeaderDrop(e, era, era.id)}
+									>
+										<span class="chevron">{isCollapsed(era.id) ? '▸' : '▾'}</span>
+										<span class="collection-title">{era.title}</span>
+									</button>
+									{#if !isCollapsed(era.id) && novelsIn(era.id).length > 0}
+										{@render shelf(shelfItems(novelsIn(era.id)), era.id)}
+									{/if}
+								</div>
 							{/each}
 						{/if}
 					</section>
-				{/if}
+				{/each}
 			{/each}
 
 			{#if novelsIn(null).length > 0}
@@ -782,7 +837,7 @@
 						class="collection-header universe-header"
 						class:drop-target={dropTargetKey === 'unsorted'}
 						onclick={() => toggleCollapse('unsorted')}
-						ondragover={(e) => onHeaderDragOver(e, 'unsorted')}
+						ondragover={(e) => onHeaderDragOver(e, 'unsorted', null)}
 						ondragleave={() => onHeaderDragLeave('unsorted')}
 						ondrop={(e) => onHeaderDrop(e, null, 'unsorted')}
 					>
@@ -846,7 +901,7 @@
 			class="novel-card"
 			href="/novels/{novel.id}"
 			draggable="true"
-			ondragstart={(e) => onCardDragStart(e, novel.id)}
+			ondragstart={(e) => onCardDragStart(e, novel)}
 			ondragend={onCardDragEnd}
 			onclick={(e) => suppressCardNav(e, novel.id)}
 		>
@@ -888,12 +943,13 @@
 			<div class="card-menu" role="menu">
 				<div class="card-menu-section">
 					<p class="card-menu-label">Move to…</p>
+					<!-- v2.1: only shelves owned by this card's novel owner are legal targets -->
 					<button class="card-menu-item" onclick={() => assignCollection(novel.id, null)}>Unsorted</button>
-					{#each topLevels as top (top.id)}
-						<button class="card-menu-item" onclick={() => assignCollection(novel.id, top.id)}>{top.title}</button>
-						{#each childrenOf(top.id) as era (era.id)}
-							<button class="card-menu-item indented" onclick={() => assignCollection(novel.id, era.id)}>{era.title}</button>
-						{/each}
+					{#each moveTargetsFor(collections, novel.owner_id ?? null) as target (target.id)}
+						<button
+							class={target.indented ? 'card-menu-item indented' : 'card-menu-item'}
+							onclick={() => assignCollection(novel.id, target.id)}
+						>{target.title}</button>
 					{/each}
 				</div>
 				<div class="card-menu-section">
@@ -1290,6 +1346,18 @@
 		<div class="modal manage-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showManageModal = false)} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>Edit Shelves</h2>
 
+			{#if isArchivist}
+				<!-- Archivists manage any owner's shelf space; writers only ever their own. -->
+				<label class="owner-field manage-owner-switcher">
+					<span>Shelf space</span>
+					<select bind:value={manageOwnerId} onchange={onManageOwnerSwitch}>
+						{#each usersList as u}
+							<option value={u.id}>{u.id === currentUser?.id ? `${u.username} (you)` : u.username}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
+
 			<div class="manage-create">
 				<input
 					type="text"
@@ -1299,18 +1367,18 @@
 				/>
 				<select bind:value={newCollParent} aria-label="Parent shelf">
 					<option value="">Top-level (universe)</option>
-					{#each topLevels as top (top.id)}
+					{#each manageTopLevels as top (top.id)}
 						<option value={top.id}>Under: {top.title}</option>
 					{/each}
 				</select>
 				<button class="btn btn-primary" onclick={createCollection} disabled={!newCollTitle.trim()}>Add</button>
 			</div>
 
-			{#if topLevels.length === 0}
+			{#if manageTopLevels.length === 0}
 				<p class="manage-empty">No shelves yet. Create a universe above, then add eras beneath it.</p>
 			{:else}
 				<div class="manage-list">
-					{#each topLevels as top, ti (top.id)}
+					{#each manageTopLevels as top, ti (top.id)}
 						<div class="manage-row universe-row">
 							{#if renamingCollId === top.id}
 								<!-- svelte-ignore a11y_autofocus -->
@@ -1326,7 +1394,7 @@
 							{/if}
 							<div class="manage-row-actions">
 								<button class="icon-btn" title="Move up" disabled={ti === 0} onclick={() => moveCollection(top, -1)}>↑</button>
-								<button class="icon-btn" title="Move down" disabled={ti === topLevels.length - 1} onclick={() => moveCollection(top, 1)}>↓</button>
+								<button class="icon-btn" title="Move down" disabled={ti === manageTopLevels.length - 1} onclick={() => moveCollection(top, 1)}>↓</button>
 								<button class="icon-btn" title="Rename" onclick={() => { renamingCollId = top.id; renamingCollTitle = top.title; }}>✎</button>
 								<button class="icon-btn danger" title="Delete" onclick={() => deleteConfirmColl = top}>✕</button>
 							</div>
@@ -1909,6 +1977,17 @@
 		gap: 1.75rem;
 	}
 
+	/* Owner kicker above each owner's top-level shelves (All view, 2+ owners
+	   with shelves). Small and quiet — a nameplate, not a heading. */
+	.owner-kicker {
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.09em;
+		color: var(--text-muted);
+		margin: 0.25rem 0 -1.15rem 0.5rem;
+	}
+
 	.shelf-section {
 		display: flex;
 		flex-direction: column;
@@ -2209,6 +2288,11 @@
 	/* ─── Manage shelves modal ───────────────────────────────────────── */
 	.manage-modal {
 		max-width: 560px;
+	}
+
+	/* Owner-space switcher (archivist only) sits above the create row. */
+	.manage-owner-switcher {
+		margin-bottom: 1rem;
 	}
 
 	.manage-create {

@@ -60,8 +60,17 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		if (body.collection_id === null) {
 			locals.db.prepare('UPDATE novels SET collection_id = NULL, updated_at = ? WHERE id = ?').run(now, params.id);
 		} else if (typeof body.collection_id === 'string') {
-			const target = locals.db.prepare('SELECT id FROM collections WHERE id = ?').get(body.collection_id);
+			const target = locals.db
+				.prepare('SELECT id, owner_id FROM collections WHERE id = ?')
+				.get(body.collection_id) as { id: string; owner_id: string | null } | undefined;
 			if (!target) throw error(400, 'collection_id must reference an existing collection');
+			// v2.1: shelves are per-owner — a novel may only be filed onto a
+			// shelf belonging to the novel's owner. The effective owner accounts
+			// for an archivist reassignment earlier in this same request.
+			const novelOwner = (ownerId ?? (existing as { owner_id: string | null }).owner_id) ?? null;
+			if ((target.owner_id ?? null) !== novelOwner) {
+				throw error(400, 'a novel may only be filed onto a shelf belonging to its owner');
+			}
 			locals.db.prepare('UPDATE novels SET collection_id = ?, updated_at = ? WHERE id = ?').run(body.collection_id, now, params.id);
 		} else {
 			throw error(400, 'collection_id must be a string or null');

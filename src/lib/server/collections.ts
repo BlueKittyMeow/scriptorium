@@ -5,6 +5,7 @@ export interface CollectionRow {
 	id: string;
 	title: string;
 	parent_id: string | null;
+	owner_id: string | null;
 	sort_order: number;
 	created_at: string;
 	updated_at: string;
@@ -28,13 +29,18 @@ export function hasChildren(db: Database.Database, id: string): boolean {
  * is supplied (the PUT case), also forbids parenting a collection that itself
  * has children — that would create a second level.
  *
+ * v2.1: when `childOwnerId` is supplied (pass null explicitly for an unowned
+ * child — `undefined` skips the check), the parent must belong to the same
+ * owner: shelf spaces are per-user and a subtree never spans two owners.
+ *
  * Callers pass this only when parent_id is a non-null value; explicit-null
  * (promote to top-level) is always allowed and handled by the caller.
  */
 export function assertValidParentCollection(
 	db: Database.Database,
 	parentId: string,
-	childId?: string
+	childId?: string,
+	childOwnerId?: string | null
 ): void {
 	if (childId && parentId === childId) {
 		throw error(400, 'a collection cannot be its own parent');
@@ -48,6 +54,9 @@ export function assertValidParentCollection(
 	}
 	if (childId && hasChildren(db, childId)) {
 		throw error(400, 'a collection with children cannot itself be nested');
+	}
+	if (childOwnerId !== undefined && (parent.owner_id ?? null) !== (childOwnerId ?? null)) {
+		throw error(400, 'a child collection must have the same owner as its parent');
 	}
 }
 

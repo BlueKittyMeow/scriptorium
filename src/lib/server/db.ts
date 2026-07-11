@@ -104,9 +104,12 @@ export function runImportSourceMigration(db: Database.Database): void {
  * 2. Add novels.collection_id (nullable — null novels fall to Unsorted).
  * 3. Add novels.stack_label (nullable — novels sharing a label within the same
  *    collection render as one visual version-stack; no new table).
+ * 4. (v2.1) Add collections.owner_id (nullable, references users) — each
+ *    collection belongs to one user's shelf space — and backfill orphans
+ *    (see backfillCollectionOwners below).
  *
- * No backfill: legacy novels simply stay Unsorted and unstacked until the
- * operator files them.
+ * Novels get no backfill: legacy novels simply stay Unsorted and unstacked
+ * until the operator files them.
  */
 export function runCollectionsMigration(db: Database.Database): void {
 	db.exec(`
@@ -114,17 +117,96 @@ export function runCollectionsMigration(db: Database.Database): void {
 		  id TEXT PRIMARY KEY,
 		  title TEXT NOT NULL,
 		  parent_id TEXT REFERENCES collections(id),
+		  owner_id TEXT REFERENCES users(id),
 		  sort_order REAL NOT NULL,
 		  created_at TEXT NOT NULL,
 		  updated_at TEXT NOT NULL
 		);
 	`);
+	// Guarded ALTER for the v2 legacy shape: table exists, owner_id doesn't.
+	const collCols = db.prepare(`PRAGMA table_info(collections)`).all() as { name: string }[];
+	if (!collCols.some((c) => c.name === 'owner_id')) {
+		db.exec(`ALTER TABLE collections ADD COLUMN owner_id TEXT REFERENCES users(id)`);
+	}
 	const cols = db.prepare(`PRAGMA table_info(novels)`).all() as { name: string }[];
 	if (!cols.some((c) => c.name === 'collection_id')) {
 		db.exec(`ALTER TABLE novels ADD COLUMN collection_id TEXT REFERENCES collections(id)`);
 	}
 	if (!cols.some((c) => c.name === 'stack_label')) {
 		db.exec(`ALTER TABLE novels ADD COLUMN stack_label TEXT`);
+	}
+	backfillCollectionOwners(db, cols);
+}
+
+/**
+ * v2.1 backfill: give every owner-less collection an owner. The truly right
+ * target ("the writer who owns the imported corpus") is a production fact a
+ * generic migration can't know, so it is derived from the members instead:
+ *
+ * - A collection whose (live) member novels all share one owner gets that
+ *   owner. For a top-level "universe" the members of its child eras count
+ *   too — the common shape is a universe with no directly-assigned novels
+ *   whose eras hold one writer's books; falling back to the archivist there
+ *   would hand the writer's universe to the wrong user AND violate the
+ *   child-shares-parent-owner rule.
+ * - A memberless or mixed-owner child era inherits its parent's (just
+ *   resolved) owner, keeping subtrees single-owner.
+ * - Anything else falls back to the first archivist (same idea as the
+ *   ownership migration). No archivist yet → stays NULL until the next boot.
+ *
+ * Idempotent: only NULL owner_id rows are ever touched. Top-levels are
+ * processed before children so parent inheritance sees resolved values.
+ * Skips entirely when there is nothing to backfill, or when the database
+ * predates the users table / novels.owner_id (fresh setups mid-schema).
+ */
+export function backfillCollectionOwners(
+	db: Database.Database,
+	novelCols: { name: string }[]
+): void {
+	const orphaned = db
+		.prepare(
+			`SELECT id, parent_id FROM collections WHERE owner_id IS NULL
+			 ORDER BY (parent_id IS NOT NULL), created_at, id`
+		)
+		.all() as { id: string; parent_id: string | null }[];
+	if (orphaned.length === 0) return;
+	const hasUsersTable = !!db
+		.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='users'`)
+		.get();
+	if (!hasUsersTable || !novelCols.some((c) => c.name === 'owner_id')) return;
+
+	const archivist = db
+		.prepare(`SELECT id FROM users WHERE role = 'archivist' ORDER BY created_at LIMIT 1`)
+		.get() as { id: string } | undefined;
+	const subtreeOwners = db.prepare(
+		`SELECT DISTINCT n.owner_id AS oid FROM novels n
+		 WHERE n.deleted_at IS NULL AND n.owner_id IS NOT NULL
+		   AND (n.collection_id = @id
+		        OR n.collection_id IN (SELECT c.id FROM collections c WHERE c.parent_id = @id))`
+	);
+	const directOwners = db.prepare(
+		`SELECT DISTINCT n.owner_id AS oid FROM novels n
+		 WHERE n.deleted_at IS NULL AND n.owner_id IS NOT NULL AND n.collection_id = ?`
+	);
+	const parentOwner = db.prepare(`SELECT owner_id FROM collections WHERE id = ?`);
+	const setOwner = db.prepare(`UPDATE collections SET owner_id = ? WHERE id = ?`);
+
+	for (const row of orphaned) {
+		const owners = (
+			row.parent_id === null ? subtreeOwners.all({ id: row.id }) : directOwners.all(row.id)
+		).map((r: any) => r.oid as string);
+		let owner: string | null = null;
+		if (owners.length === 1) {
+			owner = owners[0];
+		} else if (row.parent_id !== null) {
+			owner =
+				((parentOwner.get(row.parent_id) as { owner_id: string | null } | undefined)?.owner_id ??
+					archivist?.id) ??
+				null;
+		} else {
+			owner = archivist?.id ?? null;
+		}
+		if (owner) setOwner.run(owner, row.id);
 	}
 }
 
@@ -148,6 +230,7 @@ CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   parent_id TEXT REFERENCES collections(id),
+  owner_id TEXT REFERENCES users(id),
   sort_order REAL NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

@@ -29,7 +29,9 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 			// Explicit null: promote to top-level. Always allowed.
 			parentId = null;
 		} else if (typeof body.parent_id === 'string') {
-			assertValidParentCollection(locals.db, body.parent_id, params.id);
+			// v2.1: the new parent must belong to this collection's owner —
+			// shelf subtrees never span two owners.
+			assertValidParentCollection(locals.db, body.parent_id, params.id, existing.owner_id);
 			parentId = body.parent_id;
 		} else {
 			throw error(400, 'parent_id must be a string or null');

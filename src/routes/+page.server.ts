@@ -24,10 +24,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 	`).all();
 
 	// Collections travel with the novels so the bookshelf renders on first
-	// paint — no client fetch waterfall. Same order as GET /api/collections.
+	// paint — no client fetch waterfall. Same shape and order as
+	// GET /api/collections (owner_username included for owner-space kickers).
 	const collections = locals.db.prepare(`
-		SELECT * FROM collections
-		ORDER BY COALESCE(parent_id, id), (parent_id IS NOT NULL), sort_order, created_at
+		SELECT c.*, u.username AS owner_username
+		FROM collections c
+		LEFT JOIN users u ON u.id = c.owner_id
+		ORDER BY COALESCE(c.parent_id, c.id), (c.parent_id IS NOT NULL), c.sort_order, c.created_at
 	`).all();
 
 	return { novels, collections };

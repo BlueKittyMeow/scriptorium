@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   parent_id TEXT REFERENCES collections(id),
+  owner_id TEXT REFERENCES users(id),
   sort_order REAL NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

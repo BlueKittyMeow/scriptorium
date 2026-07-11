@@ -128,3 +128,44 @@ describe('manage shelves modal', () => {
 		expect(SOURCE).not.toMatch(/\.novel-card \{[^}]*display: inline/s);
 	});
 });
+
+describe('per-owner shelf spaces (v2.1)', () => {
+	it('imports the pure scoping helpers', () => {
+		expect(SOURCE).toMatch(/from '\$lib\/shelf-scope(\.js)?'/);
+	});
+
+	it('renders owner spaces in turn, with a kicker only when 2+ owners have shelves under All', () => {
+		expect(SOURCE).toContain('displayedSpaces');
+		expect(SOURCE).toContain('owner-kicker');
+		expect(SOURCE).toContain('showKickers');
+		expect(SOURCE).toMatch(/selectedShelf === 'all' && shelfSpaces\.length > 1/);
+		expect(SOURCE).toContain('topLevelsFor(');
+	});
+
+	it('shows shelf structure when the displayed owner space has shelves, even with zero cards', () => {
+		// The empty-state must not swallow an owner's empty shelf tree.
+		expect(SOURCE).toContain('hasVisibleShelves');
+		expect(SOURCE).toMatch(/filteredNovels\.length === 0 && !hasVisibleShelves/);
+	});
+
+	it('Edit-shelves modal manages one owner space, switcher gated to archivists', () => {
+		expect(SOURCE).toContain('manageOwnerId');
+		expect(SOURCE).toContain('manageTopLevels');
+		expect(SOURCE).toContain('manage-owner-switcher');
+		// The switcher select renders only inside an archivist guard.
+		expect(SOURCE).toMatch(/\{#if isArchivist\}[\s\S]{0,600}manage-owner-switcher/);
+	});
+
+	it('creating inside the modal creates for the displayed owner', () => {
+		expect(SOURCE).toMatch(/owner_id:\s*manageOwnerId/);
+	});
+
+	it('Move-to picker lists only shelves owned by the card’s novel owner', () => {
+		expect(SOURCE).toMatch(/moveTargetsFor\(collections,\s*novel\.owner_id/);
+	});
+
+	it('rejects cross-owner drops client-side (no drop-highlight, no request)', () => {
+		expect(SOURCE).toMatch(/function onHeaderDragOver[\s\S]{0,400}canFileOn\(/);
+		expect(SOURCE).toMatch(/function onHeaderDrop[\s\S]{0,400}canFileOn\(/);
+	});
+});
