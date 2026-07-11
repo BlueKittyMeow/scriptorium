@@ -13,6 +13,7 @@
 		<h2>Contents</h2>
 		<ul>
 			<li><a href="#library">The Library</a></li>
+			<li><a href="#shelves">Shelves &amp; Universes</a></li>
 			<li><a href="#writing">Writing</a></li>
 			<li><a href="#snapshots">Snapshots &amp; Comparing Versions</a></li>
 			<li><a href="#search">Search</a></li>
@@ -28,7 +29,9 @@
 		<h2>The Library</h2>
 		<p>
 			The library is your bookshelf — every novel you have lives here as a card
-			showing its title, status, and word count.
+			showing its title, status, and word count. Novels are grouped onto shelves
+			(a universe, an era, or just <em>Unsorted</em>) — see <em>Shelves &amp;
+			Universes</em> below for how that grouping works.
 		</p>
 		<ul>
 			<li><strong>Create a novel:</strong> click <em>New Novel</em>, type a title, and press Enter (or click Create). You'll land straight in the new novel's workspace.</li>
@@ -36,10 +39,28 @@
 			<li><strong>Rename a novel:</strong> hover over its card and click the ✎ pencil that appears next to the title. Press Enter to save, Escape to cancel. (You can also rename from inside the workspace — double-click the title at the top of the binder.)</li>
 		</ul>
 		<p>
-			If novels on your shelf belong to more than one person, a row of filter chips
-			appears above the grid — <em>All</em>, <em>Mine</em>, and one per owner. Your
+			If novels in your library belong to more than one person, a row of filter chips
+			appears above the shelves — <em>All</em>, <em>Mine</em>, and one per owner. Your
 			choice is remembered between visits.
 		</p>
+	</section>
+
+	<section id="shelves">
+		<h2>Shelves &amp; Universes</h2>
+		<p>
+			As your library grows, novels can be grouped onto shelves — handy if you write
+			in one big shared universe (the way Sanderson's Cosmere holds Mistborn Era 1,
+			Era 2, and so on) or just want to keep a themed set, like all your poetry,
+			together.
+		</p>
+		<ul>
+			<li><strong>Universes and eras:</strong> a top-level shelf — a "universe," or simply a themed shelf like <em>Poetry</em> — can hold novels directly, plus smaller era sub-shelves nested one level inside it. Click a shelf header's chevron (▸/▾) to collapse or expand it; universes and their eras collapse independently, and Scriptorium remembers what you had open between visits.</li>
+			<li><strong>Version stacks:</strong> novels that are different versions of the same book cluster into one stack on their shelf — a few card edges peeking out behind a front card, with a chip reading something like <em>"Away, Away — 3 versions."</em> Tap the stack to fan it out into individual cards; tap the chip again to collapse it back. The front card is always whichever version was updated most recently.</li>
+			<li><strong>Moving a novel:</strong> on a desktop, drag a card and drop it onto any shelf header — a universe or an era — to move it there. On a phone, or anywhere you'd rather not drag, open the card's <strong>⋯</strong> menu and choose <em>Move to…</em>, then pick the destination shelf (or <em>Unsorted</em>) from the list.</li>
+			<li><strong>Stacking and unstacking:</strong> the same <strong>⋯</strong> menu has a <em>Stack…</em> section — pick an existing stack label already used on that shelf, or type a new one, to group the novel into a stack. <em>Clear stack</em> pulls it back out on its own.</li>
+			<li><strong>Managing shelves:</strong> click <em>Edit shelves</em> above the library to create shelves (with an optional parent, to nest an era under a universe), rename them, reorder them with the ↑/↓ arrows, or delete them. Deleting a shelf never deletes the novels on it — they simply fall to <em>Unsorted</em>, and any eras nested under a deleted universe are promoted to shelves of their own.</li>
+			<li><strong>Unsorted:</strong> novels that haven't been put on a shelf yet — including every new or freshly imported novel — collect in a trailing <em>Unsorted</em> section, shown only when it has something in it.</li>
+		</ul>
 	</section>
 
 	<section id="writing">
@@ -78,6 +99,8 @@
 			The <em>ABC</em> button at the right end of the toolbar turns your browser's
 			spellcheck on or off — handy to silence the red squiggles under invented names
 			and places. The footer shows the current state, and your choice is remembered.
+			It works exactly the same by tap on a phone — the toolbar just wraps onto a
+			second row when the screen's too narrow to fit everything in one line.
 		</p>
 
 		<h3>Light and dark themes</h3>

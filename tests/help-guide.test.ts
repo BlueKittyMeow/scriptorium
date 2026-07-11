@@ -49,9 +49,25 @@ describe('help guide: covers the key sections', () => {
 		const fs = await import('fs');
 		const source = fs.readFileSync(HELP_PATH, 'utf-8');
 
-		for (const id of ['library', 'writing', 'snapshots', 'search', 'importing', 'compiling', 'trash', 'tips', 'archivists']) {
+		for (const id of ['library', 'shelves', 'writing', 'snapshots', 'search', 'importing', 'compiling', 'trash', 'tips', 'archivists']) {
 			expect(source).toContain(`<section id="${id}"`);
 		}
+	});
+
+	it('should describe shelves, eras, version stacks, moving, and managing shelves', async () => {
+		const fs = await import('fs');
+		const source = fs.readFileSync(HELP_PATH, 'utf-8');
+
+		const shelvesSection = source.split('<section id="shelves"')[1]?.split('<section id="writing"')[0];
+		expect(shelvesSection).toBeTruthy();
+		expect(shelvesSection).toMatch(/universe/i);
+		expect(shelvesSection).toMatch(/era/i);
+		expect(shelvesSection).toMatch(/versions/i);
+		expect(shelvesSection).toContain('Move to…');
+		expect(shelvesSection).toContain('Edit shelves');
+		expect(shelvesSection).toContain('Unsorted');
+		expect(shelvesSection).toContain('▸');
+		expect(shelvesSection).toContain('▾');
 	});
 
 	it('should describe autosave and the save status indicator', async () => {
@@ -71,6 +87,20 @@ describe('help guide: covers the key sections', () => {
 		expect(source).toContain('ABC');
 		// theme cycle: system → light → dark
 		expect(source).toMatch(/system/i);
+	});
+
+	it('should describe the ABC button working by tap on phones, consistent with the toolbar wrapping', async () => {
+		const fs = await import('fs');
+		const source = fs.readFileSync(HELP_PATH, 'utf-8');
+		const editor = fs.readFileSync('src/lib/components/Editor.svelte', 'utf-8');
+
+		const spellcheckPara = source.split('<h3>Spellcheck</h3>')[1]?.split('</p>')[0] || '';
+		expect(spellcheckPara).toMatch(/phone/i);
+		expect(spellcheckPara).toMatch(/tap/i);
+		expect(spellcheckPara).toMatch(/wraps/i);
+		// The claim is only honest if the toolbar actually wraps and the ABC button is a plain tappable button.
+		expect(editor).toMatch(/flex-wrap:\s*wrap/);
+		expect(editor).toMatch(/class="tb-btn"[^>]*onclick={toggleSpellcheck}[^>]*>ABC</);
 	});
 
 	it('should describe snapshot compare with the actual ⇄ icon and green/red diff colors', async () => {
@@ -165,6 +195,40 @@ describe('help guide: honesty checks against the real UI', () => {
 		}
 	});
 });
+
+	it('the shelf move/stack/manage controls the guide references exist in the library page', async () => {
+		const fs = await import('fs');
+		const library = fs.readFileSync('src/routes/+page.svelte', 'utf-8');
+
+		// Card ⋯ menu → Move to… / Stack… / Clear stack
+		expect(library).toContain('Move to…');
+		expect(library).toContain('Stack…');
+		expect(library).toContain('Clear stack');
+		expect(library).toMatch(/title="Move to shelf or set version stack"/);
+		// Edit shelves affordance + manage modal reorder/delete
+		expect(library).toContain('Edit shelves');
+		expect(library).toMatch(/Move up/);
+		expect(library).toMatch(/Move down/);
+		expect(library).toMatch(/will fall to Unsorted/);
+		expect(library).toMatch(/will promote to top-level/);
+		// Chevrons and the collapse-state localStorage key
+		expect(library).toContain('▸');
+		expect(library).toContain('▾');
+		expect(library).toContain('scriptorium-collections-collapsed');
+		// Drag-and-drop onto shelf headers + version-stack "N versions" chip
+		expect(library).toMatch(/ondragstart=/);
+		expect(library).toMatch(/ondrop=/);
+		expect(library).toMatch(/versions/);
+	});
+
+	it('the Move-to/Stack menu button stays visible without hover on touch devices, matching the guide\'s phone claim', async () => {
+		const fs = await import('fs');
+		const library = fs.readFileSync('src/routes/+page.svelte', 'utf-8');
+
+		expect(library).toMatch(/@media \(pointer: coarse\)/);
+		const touchBlock = library.split('@media (pointer: coarse)')[1]?.split('}\n\n')[0] || '';
+		expect(touchBlock).toMatch(/\.menu-btn/);
+	});
 
 describe('top bar: help link', () => {
 	it('should link to /help from the top bar', async () => {
