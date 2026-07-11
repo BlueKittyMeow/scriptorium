@@ -120,3 +120,41 @@ One unit (L). The library page rework is the bulk; endpoints are small.
 - Reassigning documents between novels.
 - Auto-detection of stacks (the operator will seed initial stacks server-side
   from import-manifest data; the UI only needs to render and edit them).
+
+---
+
+# v2.1 Addendum — Per-Owner Shelf Spaces
+
+**Written:** 2026-07-11, after real use: the archivist filtered to *Mine*,
+had only Unsorted, and Edit Shelves offered no control over HER shelves —
+only the writer's structure. Global collections fail the second user.
+
+## Model change
+
+Each collection belongs to a user: `collections.owner_id TEXT REFERENCES
+users(id)` (guarded ALTER; **backfill all existing collections to the
+writer who owns the imported corpus** — they are her universe's shelves).
+
+- **Library rendering:** under an owner filter (*Mine* / a named owner),
+  render only that owner's shelf tree + that owner's unsorted novels. Under
+  *All*, render each owner's shelf trees in turn (owner's display name as a
+  small kicker above their top-level shelves when more than one owner has
+  shelves), then a combined Unsorted.
+- **Edit shelves modal:** operates on one owner's shelf space at a time —
+  the filtered owner when a filter is active; your own under *All*. An
+  archivist gets an owner switcher inside the modal (writers only ever see
+  their own). Creating a shelf assigns that owner.
+- **Move to… / Stack…:** a novel may only be filed onto a shelf belonging
+  to the novel's owner; the pickers list exactly those shelves.
+- **API:** POST /api/collections gains owner semantics like imports
+  (archivist may name an owner, writers get themselves — reuse
+  resolveOwnerId); PUT/DELETE require... no permission enforcement exists
+  app-wide yet, so no gating beyond requireUser (C.1 matrix later), but
+  novel-assignment validation becomes: 400 unless collection.owner_id =
+  novel.owner_id.
+- **GET /api/collections** returns all (with owner_id); the client scopes.
+
+## Out of scope
+Shared/household shelves (a novel on two people's shelves), shelf-level
+permissions, cross-owner filing by archivist (deliberately strict for now —
+revisit with C.1).
