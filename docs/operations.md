@@ -48,9 +48,13 @@
 1. Live: SQLite WAL on the Pi's NVMe + per-document snapshot files.
 2. Nightly 04:00 (`scriptorium-backup.timer`, enabled): VACUUM'd db snapshot
    per day + full data-mirror to `/mnt/media/scriptorium/backups`, 14-day prune.
-3. Off-site: rclone to Google Drive `Scriptorium Backups/` (db/ + data-mirror/)
-   — the mirror carries every document's HTML and every snapshot file, not just
-   the database.
+3. Off-site: rclone to Google Drive `Scriptorium Backups/` (db/ + data-mirror/
+   + monthly/) — the mirror carries every document's HTML and every snapshot
+   file, not just the database.
+4. Monthly long-retention tier (added 2026-07-11): first run of each calendar
+   month archives that day's DB snapshot + a tarball of the full data mirror
+   to `monthly/` — never auto-pruned, locally or off-site. Thinning old months
+   (e.g. to one per year, years from now) is deliberately a human decision.
 4. A restore drill was performed and passed pre-launch (2026-07-09).
 
 ## Shared-host rules (Factotum hosts the house's DNS)
