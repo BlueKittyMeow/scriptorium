@@ -1454,9 +1454,14 @@
 
 	.novel-card {
 		/* The card is an <a>; inside .card-wrap it is no longer a grid item
-		   (which used to blockify it), so it must be block explicitly or the
-		   inline box fragments around its block children. */
-		display: block;
+		   (which used to blockify it), so it must be a block-level box or the
+		   inline box fragments around its block children. Flex column with a
+		   uniform min-height keeps every card the same size regardless of
+		   title length, with the meta row pinned to the bottom edge. */
+		display: flex;
+		flex-direction: column;
+		min-height: 9.5rem;
+		height: 100%;
 		background: var(--bg-surface);
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -1558,7 +1563,9 @@
 	.novel-meta {
 		display: flex;
 		gap: 0.75rem;
-		margin-top: 0.75rem;
+		/* Pin to the card's bottom edge so uniform-height cards read evenly */
+		margin-top: auto;
+		padding-top: 0.75rem;
 		font-size: 0.8rem;
 		color: var(--text-muted);
 	}
@@ -1971,9 +1978,35 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 		gap: 1rem;
-		/* Top-align so plain cards and stacks (which carry a chip below)
-		   share a clean top edge; the baseline below closes the shelf. */
-		align-items: start;
+		/* Stretch so every item in a row matches the tallest; combined with
+		   the cards' uniform min-height, rows read as even shelves. */
+		align-items: stretch;
+	}
+
+	.card-wrap {
+		display: flex;
+	}
+
+	.card-wrap > .novel-card {
+		flex: 1;
+	}
+
+	.stack.collapsed {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.stack.collapsed .stack-cluster {
+		flex: 1;
+		display: flex;
+	}
+
+	.stack.collapsed .stack-cluster .novel-card {
+		flex: 1;
+	}
+
+	.stack.collapsed .stack-chip {
+		align-self: flex-start;
 	}
 
 	.shelf-baseline {
