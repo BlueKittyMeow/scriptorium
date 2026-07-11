@@ -8,6 +8,15 @@
 	import SnapshotPreview from '$lib/components/SnapshotPreview.svelte';
 	import DiffView from '$lib/components/DiffView.svelte';
 	import CompileDialog from '$lib/components/CompileDialog.svelte';
+	import {
+		getDefaultDocumentParent,
+		findNodeById,
+		isDescendantOf,
+		getVisibleSiblingsOf,
+		computeSwapMove,
+		getMoveTargets,
+		computeAppendSortOrder
+	} from '$lib/binder-tree.js';
 
 	let { data } = $props();
 
@@ -20,6 +29,7 @@
 	let newItemType: 'folder' | 'document' = $state('document');
 	let newItemTitle = $state('');
 	let newItemParent: string | null = $state(null);
+	let newItemTitleEl = $state<HTMLInputElement | undefined>(undefined);
 	let searchQuery = $state('');
 	let searchResults: any[] = $state([]);
 	let showSearch = $state(false);
@@ -51,8 +61,15 @@
 	let draggedNode: TreeNode | null = $state(null);
 	let dropTarget: { nodeId: string; position: 'before' | 'after' | 'inside' } | null = $state(null);
 
+	// Touch-friendly move state (coarse pointers only — see .node-menu-btn CSS)
+	let openMenuNodeId: string | null = $state(null);
+	let showMoveModal = $state(false);
+	let moveModalNode: TreeNode | null = $state(null);
+
 	const novelId = $derived($page.params.id!);
 	const trashedItems = $derived(collectTrashed(tree));
+	const newItemParentTitle = $derived(newItemParent ? findNodeById(tree, newItemParent)?.title ?? null : null);
+	const moveTargets = $derived(moveModalNode ? getMoveTargets(tree, moveModalNode) : []);
 
 	onMount(async () => {
 		await loadTree();
@@ -383,6 +400,18 @@
 		}
 	});
 
+	// Autofocus the New-item modal's title input. The `autofocus` attribute on
+	// the input alone isn't enough here: the modal is opened by clicking a
+	// button (+ Doc / + Folder / a folder row's +), and Chromium leaves focus
+	// on the just-clicked button rather than yielding it to a freshly-inserted
+	// autofocus element — confirmed live, same reasoning as the search input
+	// above (also opened via a button click).
+	$effect(() => {
+		if (showNewModal && newItemTitleEl) {
+			setTimeout(() => newItemTitleEl?.focus(), 0);
+		}
+	});
+
 	// Drag and drop handlers
 	function handleDragStart(e: DragEvent, node: TreeNode) {
 		draggedNode = node;
@@ -394,7 +423,7 @@
 
 	function handleDragOver(e: DragEvent, node: TreeNode) {
 		if (!draggedNode || draggedNode.id === node.id) return;
-		if (draggedNode.type === 'folder' && isDescendant(draggedNode, node.id)) return;
+		if (draggedNode.type === 'folder' && isDescendantOf(draggedNode, node.id)) return;
 
 		e.preventDefault();
 		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -423,33 +452,6 @@
 		dropTarget = null;
 	}
 
-	function isDescendant(parent: TreeNode, targetId: string): boolean {
-		for (const child of parent.children) {
-			if (child.id === targetId) return true;
-			if (child.type === 'folder' && isDescendant(child, targetId)) return true;
-		}
-		return false;
-	}
-
-	function getSiblingsOf(targetId: string): { siblings: TreeNode[], parentId: string | null } {
-		const rootVisible = tree.filter(n => !n.deleted_at);
-		if (rootVisible.some(n => n.id === targetId)) {
-			return { siblings: rootVisible, parentId: null };
-		}
-		function search(nodes: TreeNode[]): { siblings: TreeNode[], parentId: string } | null {
-			for (const node of nodes) {
-				const visible = node.children.filter(c => !c.deleted_at);
-				if (visible.some(c => c.id === targetId)) {
-					return { siblings: visible, parentId: node.id };
-				}
-				const found = search(node.children);
-				if (found) return found;
-			}
-			return null;
-		}
-		return search(tree) || { siblings: [], parentId: null };
-	}
-
 	async function handleDrop(e: DragEvent, targetNode: TreeNode) {
 		e.preventDefault();
 		if (!draggedNode || !dropTarget || draggedNode.id === targetNode.id) {
@@ -463,10 +465,9 @@
 
 		if (dropTarget.position === 'inside') {
 			newParentId = targetNode.id;
-			const visible = targetNode.children.filter(c => !c.deleted_at && c.id !== draggedNode!.id);
-			newSortOrder = visible.length === 0 ? 1 : Math.max(...visible.map(c => c.sort_order)) + 1;
+			newSortOrder = computeAppendSortOrder(tree, targetNode.id, draggedNode.id);
 		} else {
-			const { siblings, parentId } = getSiblingsOf(targetNode.id);
+			const { siblings, parentId } = getVisibleSiblingsOf(tree, targetNode.id);
 			newParentId = parentId;
 			const filtered = siblings.filter(s => s.id !== draggedNode!.id);
 			const idx = filtered.findIndex(s => s.id === targetNode.id);
@@ -503,6 +504,62 @@
 		});
 
 		await loadTree();
+	}
+
+	// ─── Touch-friendly move (coarse pointers) ─────────────────────────
+	// Same reorder endpoint + payload shape as handleDrop above — only the
+	// parent/sort_order computation differs (shared helpers in $lib/binder-tree).
+
+	async function moveNode(node: TreeNode, direction: 'up' | 'down') {
+		const move = computeSwapMove(tree, node.id, direction);
+		if (!move) return;
+
+		await fetch(`/api/novels/${novelId}/tree`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				node_id: node.id,
+				node_type: node.type,
+				new_parent_id: move.parentId,
+				new_sort_order: move.sortOrder
+			})
+		});
+
+		await loadTree();
+	}
+
+	function openMoveModal(node: TreeNode) {
+		moveModalNode = node;
+		showMoveModal = true;
+	}
+
+	function closeMoveModal() {
+		showMoveModal = false;
+		moveModalNode = null;
+	}
+
+	async function moveNodeInto(newParentId: string | null) {
+		if (!moveModalNode) return;
+		const node = moveModalNode;
+		const newSortOrder = computeAppendSortOrder(tree, newParentId, node.id);
+		closeMoveModal();
+
+		await fetch(`/api/novels/${novelId}/tree`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				node_id: node.id,
+				node_type: node.type,
+				new_parent_id: newParentId,
+				new_sort_order: newSortOrder
+			})
+		});
+
+		await loadTree();
+	}
+
+	function toggleNodeMenu(nodeId: string) {
+		openMenuNodeId = openMenuNodeId === nodeId ? null : nodeId;
 	}
 
 	function collectTrashed(nodes: TreeNode[]): TreeNode[] {
@@ -547,7 +604,7 @@
 		{#if sidebarOpen}
 			<div class="sidebar-content">
 				<div class="sidebar-actions">
-					<button class="btn-sm" onclick={() => openNewModal('document')}>+ Doc</button>
+					<button class="btn-sm" onclick={() => openNewModal('document', getDefaultDocumentParent(tree, activeDocId))}>+ Doc</button>
 					<button class="btn-sm" onclick={() => openNewModal('folder')}>+ Folder</button>
 					<button class="btn-sm" onclick={() => { showSearch = !showSearch; }}>Search</button>
 					<button class="btn-sm" onclick={() => showCompileDialog = true}>Compile</button>
@@ -718,15 +775,39 @@
 	<div class="modal-backdrop" onclick={() => showNewModal = false} role="presentation">
 		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showNewModal = false)} role="dialog" aria-modal="true" tabindex="-1">
 			<h2>New {newItemType === 'folder' ? 'Folder' : 'Document'}</h2>
+			{#if newItemParentTitle}
+				<p class="modal-hint">in {newItemParentTitle}</p>
+			{/if}
+			<!-- svelte-ignore a11y_autofocus -->
 			<input
 				type="text"
+				bind:this={newItemTitleEl}
 				bind:value={newItemTitle}
 				placeholder={newItemType === 'folder' ? 'Folder name' : 'Document title'}
 				onkeydown={(e) => e.key === 'Enter' && createItem()}
+				autofocus
 			/>
 			<div class="modal-actions">
 				<button class="btn btn-secondary" onclick={() => showNewModal = false}>Cancel</button>
 				<button class="btn btn-primary" onclick={createItem} disabled={!newItemTitle.trim()}>Create</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Move into… picker (touch-only reorder path — same reorder endpoint as drag-and-drop) -->
+{#if showMoveModal && moveModalNode}
+	<div class="modal-backdrop" onclick={closeMoveModal} role="presentation">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && closeMoveModal()} role="dialog" aria-modal="true" tabindex="-1">
+			<h2>Move "{moveModalNode.title}"</h2>
+			<div class="move-target-list">
+				<button class="move-target" onclick={() => moveNodeInto(null)}>Top level</button>
+				{#each moveTargets as target (target.id)}
+					<button class="move-target" style="padding-left: {0.75 + target.depth}rem" onclick={() => moveNodeInto(target.id)}>{target.title}</button>
+				{/each}
+			</div>
+			<div class="modal-actions">
+				<button class="btn btn-secondary" onclick={closeMoveModal}>Cancel</button>
 			</div>
 		</div>
 	</div>
@@ -757,6 +838,10 @@
 
 {#snippet treeNode(node: TreeNode, depth: number)}
 	{#if !node.deleted_at}
+		{@const siblingInfo = getVisibleSiblingsOf(tree, node.id)}
+		{@const nodeIdx = siblingInfo.siblings.findIndex((s) => s.id === node.id)}
+		{@const isFirstSibling = nodeIdx <= 0}
+		{@const isLastSibling = nodeIdx === siblingInfo.siblings.length - 1}
 		<div
 			class="tree-item"
 			class:active={node.id === activeDocId}
@@ -782,6 +867,7 @@
 				<span class="node-title folder-title">{node.title}</span>
 				<span class="node-actions">
 					<button class="btn-tiny" onclick={() => openNewModal('document', node.id)} title="New document">+</button>
+					<button class="btn-tiny node-menu-btn" onclick={() => toggleNodeMenu(node.id)} title="Move" aria-label="Move folder">⋯</button>
 					<button class="btn-tiny" onclick={() => trashItem(node.id, 'folder')} title="Move to trash">×</button>
 				</span>
 			{:else}
@@ -793,8 +879,28 @@
 					<span class="word-badge">{node.word_count}</span>
 				{/if}
 				<span class="node-actions">
+					<button class="btn-tiny node-menu-btn" onclick={() => toggleNodeMenu(node.id)} title="Move" aria-label="Move document">⋯</button>
 					<button class="btn-tiny" onclick={() => trashItem(node.id, 'document')} title="Move to trash">×</button>
 				</span>
+			{/if}
+
+			{#if openMenuNodeId === node.id}
+				<div class="node-menu" role="menu">
+					<button
+						class="node-menu-item"
+						disabled={isFirstSibling}
+						onclick={() => { moveNode(node, 'up'); openMenuNodeId = null; }}
+					>↑ Move up</button>
+					<button
+						class="node-menu-item"
+						disabled={isLastSibling}
+						onclick={() => { moveNode(node, 'down'); openMenuNodeId = null; }}
+					>↓ Move down</button>
+					<button
+						class="node-menu-item"
+						onclick={() => { openMenuNodeId = null; openMoveModal(node); }}
+					>⇒ Move into…</button>
+				</div>
 			{/if}
 		</div>
 
@@ -1119,10 +1225,23 @@
 		display: flex;
 	}
 
+	/* Drag-and-drop covers reordering on desktop already, so the ↑/↓/Move-into
+	   trigger stays hidden there (even on row hover) and only appears where
+	   drag-and-drop can't work — coarse (touch) pointers. Declared before the
+	   @media override below so the override wins the cascade on touch devices. */
+	.node-menu-btn {
+		display: none;
+	}
+
 	/* Touch devices have no hover — reveal load-bearing row actions permanently */
 	@media (pointer: coarse) {
 		.tree-item .node-actions {
 			display: flex;
+		}
+
+		/* Reveal the touch-only move menu trigger too (see .node-menu-btn above) */
+		.node-menu-btn {
+			display: inline-block;
 		}
 	}
 
@@ -1137,6 +1256,45 @@
 
 	.btn-tiny:hover {
 		color: var(--accent);
+	}
+
+	.node-menu {
+		position: absolute;
+		top: 100%;
+		right: 0.5rem;
+		z-index: 20;
+		min-width: 9rem;
+		background: var(--bg-surface);
+		border: 1px solid var(--border-strong);
+		border-radius: 8px;
+		box-shadow: 0 8px 24px var(--shadow-lg);
+		padding: 0.25rem;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.node-menu-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		border-radius: 5px;
+		padding: 0.4rem 0.5rem;
+		font-size: 0.8rem;
+		color: var(--text);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.node-menu-item:hover:not(:disabled) {
+		background: var(--accent-bg);
+		color: var(--accent);
+	}
+
+	.node-menu-item:disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 
 	.trash-section {
@@ -1238,6 +1396,42 @@
 		color: var(--text-secondary);
 		margin-bottom: 1rem;
 		line-height: 1.5;
+	}
+
+	.modal-hint {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		margin: -0.35rem 0 0.75rem;
+	}
+
+	.move-target-list {
+		max-height: 300px;
+		overflow-y: auto;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		margin-bottom: 1rem;
+	}
+
+	.move-target {
+		display: block;
+		width: 100%;
+		text-align: left;
+		padding: 0.5rem 0.75rem;
+		background: none;
+		border: none;
+		border-bottom: 1px solid var(--border);
+		cursor: pointer;
+		font-size: 0.85rem;
+		color: var(--text);
+	}
+
+	.move-target:last-child {
+		border-bottom: none;
+	}
+
+	.move-target:hover {
+		background: var(--tree-hover);
+		color: var(--accent);
 	}
 
 	.no-doc {
