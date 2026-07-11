@@ -119,10 +119,12 @@ describe('manage shelves modal', () => {
 		expect(SOURCE).toMatch(/promote to top-level/);
 	});
 
-	it('novel-card anchor stays display:block inside card-wrap (inline-fragmentation regression)', () => {
+	it('novel-card anchor stays block-level inside card-wrap (inline-fragmentation regression)', () => {
 		// The card is an <a> wrapped in .card-wrap, so it is no longer a grid
-		// item and must declare display:block itself — without it the inline
-		// box fragments around its block children (bars, clipped badges).
-		expect(SOURCE).toMatch(/\.novel-card \{[^}]*display: block/s);
+		// item and must declare a block-level display itself — without it the
+		// inline box fragments around its block children (bars, clipped
+		// badges). flex/grid are equally block-level; inline-* are not.
+		expect(SOURCE).toMatch(/\.novel-card \{[^}]*display: (block|flex|grid)/s);
+		expect(SOURCE).not.toMatch(/\.novel-card \{[^}]*display: inline/s);
 	});
 });
