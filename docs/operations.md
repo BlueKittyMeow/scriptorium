@@ -27,6 +27,18 @@
 4. **Verify** — 302 locally and through the tunnel; `journalctl -u scriptorium
    -n 20` for a clean boot (migrations log nothing when idempotent-skipped).
 
+## Documentation freshness (part of every feature commit)
+
+- **Roadmap:** the in-app Roadmap tab renders `src/lib/roadmap-data.ts`
+  directly. Shipping or re-scoping a feature updates that file **in the same
+  commit** — move the item to `shipped` with its date, add what's newly next.
+  A shape test enforces structure; keeping the content honest is on the
+  committer (lead session reviews for it).
+- **User guide:** `/help`'s Guide tab has honesty-check tests that grep guide
+  claims against real UI source — if a feature changes its controls, those
+  tests fail until the guide is updated. Extend that pattern when documenting
+  new features.
+
 ## Verification gates (never bypass)
 
 - `npm test` and `npm run check` must pass **by exit code** before any commit.
