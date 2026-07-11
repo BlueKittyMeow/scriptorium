@@ -1994,6 +1994,10 @@
 	.stack.collapsed {
 		display: flex;
 		flex-direction: column;
+		/* The chip overlays the card's bottom edge (below) so the stack's
+		   grid box is exactly card-height — otherwise plain cards stretch
+		   taller than the stack's front card and meta rows misalign. */
+		position: relative;
 	}
 
 	.stack.collapsed .stack-cluster {
@@ -2006,12 +2010,19 @@
 	}
 
 	.stack.collapsed .stack-chip {
-		align-self: flex-start;
+		/* Label sticker straddling the card's bottom-left edge */
+		position: absolute;
+		bottom: -0.7rem;
+		left: 0.75rem;
+		margin-top: 0;
+		z-index: 2;
+		box-shadow: 0 2px 6px var(--shadow-sm);
 	}
 
 	.shelf-baseline {
 		height: 8px;
-		margin-top: 0.35rem;
+		/* Room for the stack chips that straddle card bottom edges */
+		margin-top: 0.9rem;
 		border-radius: 3px;
 		background: linear-gradient(
 			to bottom,
