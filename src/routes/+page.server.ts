@@ -23,5 +23,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		ORDER BY n.updated_at DESC
 	`).all();
 
-	return { novels };
+	// Collections travel with the novels so the bookshelf renders on first
+	// paint — no client fetch waterfall. Same order as GET /api/collections.
+	const collections = locals.db.prepare(`
+		SELECT * FROM collections
+		ORDER BY COALESCE(parent_id, id), (parent_id IS NOT NULL), sort_order, created_at
+	`).all();
+
+	return { novels, collections };
 };

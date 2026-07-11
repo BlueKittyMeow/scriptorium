@@ -121,6 +121,32 @@ export function assertValidNovelStatus(status: unknown): string | null {
 	return trimmed;
 }
 
+/**
+ * Validate a collection `title`. Required, non-empty after trim. Throws a 400
+ * otherwise (same explicit style as assertValidNovelStatus). Returns the
+ * trimmed value so callers store one canonical form.
+ */
+export function assertValidCollectionTitle(title: unknown): string {
+	if (typeof title !== 'string' || !title.trim()) {
+		throw error(400, 'title is required');
+	}
+	return title.trim();
+}
+
+/**
+ * Validate a novel `stack_label` VALUE (call only when the key is present and
+ * not null — key-presence and explicit-null are the caller's concern). Must be
+ * a non-empty string after trim; returns the trimmed label. Throws 400
+ * otherwise. Novels sharing a trimmed label within one collection cluster into
+ * a visual version-stack.
+ */
+export function assertValidStackLabel(value: unknown): string {
+	if (typeof value !== 'string' || !value.trim()) {
+		throw error(400, 'stack_label must be a non-empty string or null');
+	}
+	return value.trim();
+}
+
 /** Sanitize FTS5 snippet output — only allow <mark> and </mark> tags. */
 export function sanitizeSnippet(snippet: string): string {
 	// Replace <mark> and </mark> with placeholders, escape everything else, restore marks

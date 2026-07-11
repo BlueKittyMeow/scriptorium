@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { softDeleteNovel } from '$lib/server/tree-ops.js';
 import { requireUser } from '$lib/server/auth.js';
 import { logAction } from '$lib/server/audit.js';
-import { assertValidNovelStatus } from '$lib/server/validate.js';
+import { assertValidNovelStatus, assertValidStackLabel } from '$lib/server/validate.js';
 
 // GET /api/novels/:id
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -52,6 +52,29 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 			updated_at = ?
 		WHERE id = ?
 	`).run(body.title, body.subtitle, status, body.word_count_target, ownerId, now, params.id);
+
+	// Collection assignment + version-stack label. COALESCE can't distinguish
+	// "clear to null" from "omitted", so these are handled by key presence:
+	// omitted → no-op; explicit null → clear; a value → validate then set.
+	if ('collection_id' in body) {
+		if (body.collection_id === null) {
+			locals.db.prepare('UPDATE novels SET collection_id = NULL, updated_at = ? WHERE id = ?').run(now, params.id);
+		} else if (typeof body.collection_id === 'string') {
+			const target = locals.db.prepare('SELECT id FROM collections WHERE id = ?').get(body.collection_id);
+			if (!target) throw error(400, 'collection_id must reference an existing collection');
+			locals.db.prepare('UPDATE novels SET collection_id = ?, updated_at = ? WHERE id = ?').run(body.collection_id, now, params.id);
+		} else {
+			throw error(400, 'collection_id must be a string or null');
+		}
+	}
+	if ('stack_label' in body) {
+		if (body.stack_label === null) {
+			locals.db.prepare('UPDATE novels SET stack_label = NULL, updated_at = ? WHERE id = ?').run(now, params.id);
+		} else {
+			const label = assertValidStackLabel(body.stack_label);
+			locals.db.prepare('UPDATE novels SET stack_label = ?, updated_at = ? WHERE id = ?').run(label, now, params.id);
+		}
+	}
 
 	const novel = locals.db.prepare('SELECT * FROM novels WHERE id = ?').get(params.id);
 	return json(novel);

@@ -36,6 +36,11 @@ export function getDb(): Database.Database {
 		// Import-source mini-migration (idempotent). Adds novels.import_source
 		// for legacy databases so bundle/scriv re-imports become detectable.
 		runImportSourceMigration(_db);
+
+		// Collections mini-migration (idempotent). Adds the collections table
+		// and novels.collection_id / novels.stack_label for legacy databases
+		// so the library bookshelf (universes → eras → version stacks) works.
+		runCollectionsMigration(_db);
 	} catch (err) {
 		_db = null;
 		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
@@ -88,6 +93,41 @@ export function runImportSourceMigration(db: Database.Database): void {
 	}
 }
 
+/**
+ * Collections migration (library bookshelf, W.4 first slice). Exported so
+ * tests can exercise it against a legacy database created before collections
+ * existed. Idempotent — safe to run every boot.
+ *
+ * 1. Create the collections table if missing (one level of nesting via a
+ *    self-referential parent_id; null parent = top-level "universe", a set
+ *    parent = child "era").
+ * 2. Add novels.collection_id (nullable — null novels fall to Unsorted).
+ * 3. Add novels.stack_label (nullable — novels sharing a label within the same
+ *    collection render as one visual version-stack; no new table).
+ *
+ * No backfill: legacy novels simply stay Unsorted and unstacked until the
+ * operator files them.
+ */
+export function runCollectionsMigration(db: Database.Database): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS collections (
+		  id TEXT PRIMARY KEY,
+		  title TEXT NOT NULL,
+		  parent_id TEXT REFERENCES collections(id),
+		  sort_order REAL NOT NULL,
+		  created_at TEXT NOT NULL,
+		  updated_at TEXT NOT NULL
+		);
+	`);
+	const cols = db.prepare(`PRAGMA table_info(novels)`).all() as { name: string }[];
+	if (!cols.some((c) => c.name === 'collection_id')) {
+		db.exec(`ALTER TABLE novels ADD COLUMN collection_id TEXT REFERENCES collections(id)`);
+	}
+	if (!cols.some((c) => c.name === 'stack_label')) {
+		db.exec(`ALTER TABLE novels ADD COLUMN stack_label TEXT`);
+	}
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS novels (
   id TEXT PRIMARY KEY,
@@ -97,9 +137,20 @@ CREATE TABLE IF NOT EXISTS novels (
   word_count_target INTEGER,
   owner_id TEXT REFERENCES users(id),
   import_source TEXT,
+  collection_id TEXT REFERENCES collections(id),
+  stack_label TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  parent_id TEXT REFERENCES collections(id),
+  sort_order REAL NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS folders (

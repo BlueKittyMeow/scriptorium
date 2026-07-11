@@ -14,9 +14,20 @@ CREATE TABLE IF NOT EXISTS novels (
   word_count_target INTEGER,
   owner_id TEXT REFERENCES users(id),
   import_source TEXT,
+  collection_id TEXT REFERENCES collections(id),
+  stack_label TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  parent_id TEXT REFERENCES collections(id),
+  sort_order REAL NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS folders (

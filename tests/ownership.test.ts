@@ -198,7 +198,8 @@ describe('server-side load + library wiring (source-grep)', () => {
 		expect(fs.existsSync('src/routes/+page.server.ts')).toBe(true);
 		const source = fs.readFileSync('src/routes/+page.server.ts', 'utf-8');
 		expect(source).toContain('owner_username');
-		expect(source).toContain('return { novels }');
+		// Collections now travel with the novels through the same load (v2 shelf).
+		expect(source).toContain('return { novels, collections }');
 	});
 
 	it('+page.svelte no longer fetches /api/novels in onMount', async () => {
