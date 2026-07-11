@@ -17,7 +17,15 @@
 #       the app is running -- it takes its own read transaction and writes a clean file).
 #   (b) rsync -a --delete a full mirror of DATA_ROOT (content + snapshot files).
 #   (c) prune dated DB copies older than 14 days.
-#   (d) optional off-site rclone sync of the whole BACKUP_DIR.
+#   (c2) monthly tier, NEVER pruned: on the first run in each calendar month,
+#        archive that day's DB copy to monthly/scriptorium-YYYY-MM.db and a
+#        compressed tarball of the data mirror to monthly/data-YYYY-MM.tar.gz.
+#        Rationale: the 14-day dailies are security-camera footage — a deletion
+#        nobody notices for two months would otherwise be unrecoverable. One
+#        month-anchored copy per month persists forever (~40-80 MB/month
+#        compressed at current corpus size — decades of headroom on both the
+#        NVMe and the Drive remote).
+#   (d) optional off-site rclone sync of the whole BACKUP_DIR (includes monthly/).
 #
 # Safe to re-run same-day: the dated DB copy is OVERWRITTEN (VACUUM INTO refuses to
 # write to an existing file, so we remove it first). Chosen over skip-if-exists so a
@@ -71,6 +79,29 @@ log "pruning DB copies older than 14 days"
 find "$BACKUP_DIR/db" -maxdepth 1 -type f -name 'scriptorium-*.db' -mtime +14 -print -delete | while read -r p; do
 	log "pruned $p"
 done
+
+# --- (c2) monthly long-retention tier (never pruned) ------------------------
+MONTH_TAG=$(date +%Y-%m)
+MONTHLY_DB="$BACKUP_DIR/monthly/scriptorium-$MONTH_TAG.db"
+MONTHLY_TAR="$BACKUP_DIR/monthly/data-$MONTH_TAG.tar.gz"
+mkdir -p "$BACKUP_DIR/monthly"
+if [ ! -f "$MONTHLY_DB" ]; then
+	log "monthly DB archive for $MONTH_TAG: $MONTHLY_DB"
+	cp "$DB_COPY" "$MONTHLY_DB"
+else
+	log "monthly DB archive for $MONTH_TAG already exists -- keeping it (first-of-month wins)"
+fi
+if [ ! -f "$MONTHLY_TAR" ]; then
+	log "monthly data tarball for $MONTH_TAG: $MONTHLY_TAR"
+	tar -C "$BACKUP_DIR" -czf "$MONTHLY_TAR.tmp" data-mirror
+	mv "$MONTHLY_TAR.tmp" "$MONTHLY_TAR"
+	log "monthly tarball written: $(stat -c %s "$MONTHLY_TAR") bytes"
+else
+	log "monthly data tarball for $MONTH_TAG already exists -- keeping it"
+fi
+# NOTE: nothing in monthly/ is ever deleted by this script, and the rclone
+# sync below propagates it off-site. If space ever matters (years out), thin
+# old months by hand to one-per-year -- deliberately a human decision.
 
 # --- (d) optional off-site sync --------------------------------------------
 if [ -n "$RCLONE_REMOTE" ]; then
