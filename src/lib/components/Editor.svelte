@@ -557,7 +557,12 @@
 	@media (max-width: 768px) {
 		.doc-title {
 			font-size: 1.1rem;
-			padding: 0.5rem 1rem 0;
+			/* Left gutter clears the fixed mobile hamburger button (.binder-reopen
+			   in the workspace page: 0.5rem offset + 2.25rem square + gap) so the
+			   title text doesn't render underneath it. Applied unconditionally —
+			   the button lives in a different component, so a conditional gutter
+			   would cause layout shift every time the drawer opens/closes. */
+			padding: 0.5rem 1rem 0 3.5rem;
 		}
 
 		.editor-toolbar {
