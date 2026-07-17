@@ -57,6 +57,11 @@
 	let editingNovelTitle = $state(false);
 	let novelTitleDraft = $state('');
 
+	// Tree node (folder/document) rename state
+	let renamingNodeId: string | null = $state(null);
+	let renameDraft = $state('');
+	let renameInputEl = $state<HTMLInputElement | undefined>(undefined);
+
 	// Drag and drop state
 	let draggedNode: TreeNode | null = $state(null);
 	let dropTarget: { nodeId: string; position: 'before' | 'after' | 'inside' } | null = $state(null);
@@ -392,6 +397,29 @@
 		editingNovelTitle = false;
 	}
 
+	function startRename(node: TreeNode) {
+		renamingNodeId = node.id;
+		renameDraft = node.title;
+	}
+
+	async function renameNode(node: TreeNode, newTitle: string) {
+		const trimmed = newTitle.trim();
+		if (!trimmed || trimmed === node.title) {
+			renamingNodeId = null;
+			return;
+		}
+		await fetch(`/api/novels/${novelId}/tree/nodes/${node.id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: trimmed, type: node.type })
+		});
+		node.title = trimmed;
+		if (node.id === activeDocId && activeDoc) {
+			activeDoc.title = trimmed;
+		}
+		renamingNodeId = null;
+	}
+
 	// Autofocus search input when panel opens
 	$effect(() => {
 		if (showSearch && searchInputEl) {
@@ -409,6 +437,16 @@
 	$effect(() => {
 		if (showNewModal && newItemTitleEl) {
 			setTimeout(() => newItemTitleEl?.focus(), 0);
+		}
+	});
+
+	// Autofocus the tree-node rename input — same Chromium quirk as the two
+	// autofocus effects above: this field is opened via a button click
+	// (⋯ → Rename) or a dblclick, and plain `autofocus` doesn't reliably
+	// grab focus in either case.
+	$effect(() => {
+		if (renamingNodeId && renameInputEl) {
+			setTimeout(() => renameInputEl?.focus(), 0);
 		}
 	});
 
@@ -864,7 +902,23 @@
 					{expandedFolders.has(node.id) ? '▼' : '▶'}
 				</button>
 				<span class="node-icon icon-folder" aria-hidden="true"></span>
-				<span class="node-title folder-title">{node.title}</span>
+				{#if renamingNodeId === node.id}
+					<!-- svelte-ignore a11y_autofocus -->
+					<input
+						class="rename-input"
+						bind:this={renameInputEl}
+						bind:value={renameDraft}
+						onblur={() => renameNode(node, renameDraft)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') { e.preventDefault(); renameNode(node, renameDraft); }
+							if (e.key === 'Escape') { renamingNodeId = null; }
+						}}
+						autofocus
+					/>
+				{:else}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span class="node-title folder-title" ondblclick={() => startRename(node)} title="Double-click to rename">{node.title}</span>
+				{/if}
 				<span class="node-actions">
 					<button class="btn-tiny" onclick={() => openNewModal('document', node.id)} title="New document">+</button>
 					<button class="btn-tiny node-menu-btn" onclick={() => toggleNodeMenu(node.id)} title="Move" aria-label="Move folder">⋯</button>
@@ -872,9 +926,24 @@
 				</span>
 			{:else}
 				<span class="node-icon icon-doc" aria-hidden="true"></span>
-				<button class="node-title doc-title" onclick={() => selectDocument(node.id)}>
-					{node.title}
-				</button>
+				{#if renamingNodeId === node.id}
+					<!-- svelte-ignore a11y_autofocus -->
+					<input
+						class="rename-input"
+						bind:this={renameInputEl}
+						bind:value={renameDraft}
+						onblur={() => renameNode(node, renameDraft)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') { e.preventDefault(); renameNode(node, renameDraft); }
+							if (e.key === 'Escape') { renamingNodeId = null; }
+						}}
+						autofocus
+					/>
+				{:else}
+					<button class="node-title doc-title" onclick={() => selectDocument(node.id)} ondblclick={() => startRename(node)} title="Double-click to rename">
+						{node.title}
+					</button>
+				{/if}
 				{#if node.word_count}
 					<span class="word-badge">{node.word_count}</span>
 				{/if}
@@ -886,6 +955,10 @@
 
 			{#if openMenuNodeId === node.id}
 				<div class="node-menu" role="menu">
+					<button
+						class="node-menu-item"
+						onclick={() => { openMenuNodeId = null; startRename(node); }}
+					>✎ Rename</button>
 					<button
 						class="node-menu-item"
 						disabled={isFirstSibling}
@@ -1207,6 +1280,21 @@
 
 	.doc-title:hover {
 		color: var(--accent);
+	}
+
+	.rename-input {
+		flex: 1;
+		min-width: 0;
+		font-size: 0.85rem;
+		color: var(--text);
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		padding: 0.1rem 0.3rem;
+		background: var(--bg-surface);
+	}
+
+	.rename-input:focus {
+		outline: none;
 	}
 
 	.word-badge {
