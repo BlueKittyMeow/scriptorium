@@ -16,7 +16,8 @@
 		onSnapshotsToggle,
 		onManualSnapshot,
 		registerFlush,
-		contentVersion = 0
+		contentVersion = 0,
+		onrename
 	}: {
 		docId: string;
 		initialContent: string;
@@ -28,7 +29,13 @@
 		onManualSnapshot?: () => Promise<void>;
 		registerFlush?: (flush: () => Promise<void>) => void;
 		contentVersion?: number;
+		onrename?: (title: string) => void;
 	} = $props();
+
+	// Doc-title rename state (pencil button next to the header title)
+	let editingTitle = $state(false);
+	let titleDraft = $state('');
+	let titleInputEl = $state<HTMLInputElement | undefined>(undefined);
 
 	let element: HTMLDivElement;
 	let scrollContainer: HTMLDivElement;
@@ -223,6 +230,30 @@
 		}
 	});
 
+	function startTitleRename() {
+		titleDraft = title;
+		editingTitle = true;
+	}
+
+	function commitTitleRename() {
+		const trimmed = titleDraft.trim();
+		editingTitle = false;
+		if (!trimmed || trimmed === title) return;
+		// Don't set the displayed title from local state — `title` is a prop
+		// and will update once the parent's rename request completes.
+		onrename?.(trimmed);
+	}
+
+	// Autofocus the title-rename input — same reasoning as the workspace
+	// page's rename/search/new-item autofocus effects: the field is opened
+	// via a button click, and plain `autofocus` doesn't reliably grab focus
+	// in that case.
+	$effect(() => {
+		if (editingTitle && titleInputEl) {
+			setTimeout(() => titleInputEl?.focus(), 0);
+		}
+	});
+
 	function scrollToMatch(term: string) {
 		if (!editor) {
 			onSearchHighlightDone?.();
@@ -309,7 +340,27 @@
 
 <div class="editor-container">
 	<div class="editor-header">
-		<h1 class="doc-title">{title}</h1>
+		<div class="title-row">
+			{#if editingTitle}
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="doc-title-input"
+					bind:this={titleInputEl}
+					bind:value={titleDraft}
+					onblur={commitTitleRename}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') { e.preventDefault(); commitTitleRename(); }
+						if (e.key === 'Escape') { editingTitle = false; }
+					}}
+					autofocus
+				/>
+			{:else}
+				<h1 class="doc-title">{title}</h1>
+				{#if onrename}
+					<button class="rename-btn" onclick={startTitleRename} title="Rename document" aria-label="Rename document">✎</button>
+				{/if}
+			{/if}
+		</div>
 		<div class="editor-toolbar">
 			<button class="tb-btn" class:active={editor?.isActive('bold')} onclick={toggleBold} title="Bold (Ctrl+B)"><strong>B</strong></button>
 			<button class="tb-btn" class:active={editor?.isActive('italic')} onclick={toggleItalic} title="Italic (Ctrl+I)"><em>I</em></button>
@@ -366,10 +417,51 @@
 		background: var(--bg-surface);
 	}
 
+	.title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.5rem 0;
+	}
+
 	.doc-title {
+		flex: 1;
+		min-width: 0;
 		font-size: 1.3rem;
 		font-weight: 600;
-		padding: 0.75rem 1.5rem 0;
+		color: var(--text-heading);
+	}
+
+	.doc-title-input {
+		flex: 1;
+		min-width: 0;
+		font-size: 1.3rem;
+		font-weight: 600;
+		color: var(--text-heading);
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		padding: 0.1rem 0.4rem;
+		background: var(--bg-surface);
+	}
+
+	.doc-title-input:focus {
+		outline: none;
+	}
+
+	.rename-btn {
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		cursor: pointer;
+		padding: 0.25rem 0.5rem;
+		font-size: 0.9rem;
+		color: var(--text-faint);
+		flex-shrink: 0;
+	}
+
+	.rename-btn:hover {
+		background: var(--bg-elevated);
+		border-color: var(--border-input);
 		color: var(--text-heading);
 	}
 
@@ -555,14 +647,24 @@
 	.save-status.unsaved { color: var(--unsaved); }
 
 	@media (max-width: 768px) {
-		.doc-title {
-			font-size: 1.1rem;
+		.title-row {
 			/* Left gutter clears the fixed mobile hamburger button (.binder-reopen
 			   in the workspace page: 0.5rem offset + 2.25rem square + gap) so the
-			   title text doesn't render underneath it. Applied unconditionally —
-			   the button lives in a different component, so a conditional gutter
-			   would cause layout shift every time the drawer opens/closes. */
+			   title (and the rename pencil beside it) don't render underneath it.
+			   Applied unconditionally — the button lives in a different
+			   component, so a conditional gutter would cause layout shift every
+			   time the drawer opens/closes. */
 			padding: 0.5rem 1rem 0 3.5rem;
+		}
+
+		.doc-title,
+		.doc-title-input {
+			font-size: 1.1rem;
+		}
+
+		.rename-btn {
+			min-width: 2rem;
+			min-height: 2rem;
 		}
 
 		.editor-toolbar {

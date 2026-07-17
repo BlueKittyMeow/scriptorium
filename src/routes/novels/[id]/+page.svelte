@@ -735,6 +735,10 @@
 						onManualSnapshot={handleManualSnapshot}
 						registerFlush={registerEditorFlush}
 						contentVersion={editorContentVersion}
+						onrename={(t) => {
+							const node = activeDocId ? findNodeById(tree, activeDocId) : null;
+							if (node) renameNode(node, t);
+						}}
 					/>
 				{/if}
 			</div>
