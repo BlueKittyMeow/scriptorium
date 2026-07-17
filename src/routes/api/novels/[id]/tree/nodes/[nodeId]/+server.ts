@@ -75,15 +75,24 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	// Rename
-	if (body.title) {
+	if (body.title !== undefined) {
+		const trimmedTitle = typeof body.title === 'string' ? body.title.trim() : '';
+		if (!trimmedTitle) throw error(400, 'Title cannot be empty');
+
 		if (nodeType === 'folder') {
+			const folder = locals.db.prepare('SELECT * FROM folders WHERE id = ? AND novel_id = ? AND deleted_at IS NULL').get(params.nodeId, params.id);
+			if (!folder) throw error(404, 'Folder not found');
+
 			locals.db.prepare('UPDATE folders SET title = ?, updated_at = ? WHERE id = ? AND novel_id = ?')
-				.run(body.title, now, params.nodeId, params.id);
+				.run(trimmedTitle, now, params.nodeId, params.id);
 		} else {
+			const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND novel_id = ? AND deleted_at IS NULL').get(params.nodeId, params.id);
+			if (!doc) throw error(404, 'Document not found');
+
 			locals.db.prepare('UPDATE documents SET title = ?, updated_at = ? WHERE id = ? AND novel_id = ?')
-				.run(body.title, now, params.nodeId, params.id);
+				.run(trimmedTitle, now, params.nodeId, params.id);
 			locals.db.prepare('UPDATE documents_fts SET title = ? WHERE doc_id = ?')
-				.run(body.title, params.nodeId);
+				.run(trimmedTitle, params.nodeId);
 		}
 	}
 
