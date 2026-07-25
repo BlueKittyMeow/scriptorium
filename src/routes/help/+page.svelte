@@ -411,6 +411,12 @@
 	<section id="search">
 		<h2>Search</h2>
 		<p>
+			There are two kinds of searching, and they answer different questions:
+			<em>which document was that in?</em> and <em>where is it on this page?</em>
+		</p>
+
+		<h3>Across the whole novel</h3>
+		<p>
 			Inside a novel, click <em>Search</em> at the top of the binder (or press
 			<strong>Ctrl+K</strong>) and start typing. Results appear as you type, showing
 			the document title and a snippet with your words highlighted.
@@ -419,6 +425,20 @@
 			<li>Matching is by word beginnings — typing <em>lant</em> finds <em>lantern</em>. You don't need whole words.</li>
 			<li>Click a result to jump to that document; the first match is briefly highlighted in the text so your eye lands on it.</li>
 			<li>Search covers the current novel and skips anything in the trash.</li>
+		</ul>
+
+		<h3>Within the document you're reading</h3>
+		<p>
+			Click <em>Find</em> in the toolbar above the text (or press
+			<strong>Ctrl+F</strong>) and a small find bar opens under the toolbar. Type a
+			word and <em>every</em> match in that document lights up at once, with the one
+			you're on in a stronger colour.
+		</p>
+		<ul>
+			<li>The counter reads something like <em>3 of 12</em>, so you can see how often the word turns up.</li>
+			<li><strong>↓</strong> and <strong>↑</strong> (or <strong>Enter</strong> and <strong>Shift+Enter</strong>) step forward and back, wrapping around at the ends. The page scrolls to each match.</li>
+			<li>Matching here is plain and literal — case doesn't matter, and it finds the letters anywhere in a word, including across a stretch of italics.</li>
+			<li>Find works in both Read and Edit mode, and it leaves the cursor in the find box — on a phone the keyboard stays where you put it. <strong>Escape</strong> or <strong>✕</strong> closes the bar and clears the highlights.</li>
 		</ul>
 	</section>
 
@@ -495,6 +515,7 @@
 		<h2>Tips</h2>
 		<ul>
 			<li><strong>Ctrl+K</strong> opens and closes search from anywhere in the workspace.</li>
+			<li><strong>Ctrl+F</strong> finds words in the document you're reading — every match at once, arrows to walk through them.</li>
 			<li>The theme follows your device's light/dark setting by default — you only need the toggle if you want to override it.</li>
 			<li>Spellcheck and theme choices are remembered per browser, so your phone and your desk can each have their own setup.</li>
 			<li>On a phone, the binder and snapshot panel slide over the page rather than squeezing beside it — tap the dimmed background to dismiss the binder.</li>

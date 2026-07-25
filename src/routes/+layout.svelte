@@ -104,6 +104,8 @@
 
 		--tree-hover: rgba(0, 0, 0, 0.04);
 		--search-highlight: #ffe066;
+		--find-match: #f6e3b4;
+		--find-match-current: #f2c14e;
 		--error-bg: #fef2f2;
 		--error-text: #cc4444;
 		--warning-bg: #fef3c7;
@@ -146,6 +148,8 @@
 
 		--tree-hover: rgba(255, 255, 255, 0.04);
 		--search-highlight: #8a6a20;
+		--find-match: #45361a;
+		--find-match-current: #7d5f1c;
 		--error-bg: #2a1515;
 		--error-text: #e88888;
 		--warning-bg: #2a2210;

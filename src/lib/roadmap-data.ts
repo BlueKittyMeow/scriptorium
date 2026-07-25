@@ -70,6 +70,13 @@ export const ROADMAP: RoadmapItem[] = [
 		shipped: '2026-07'
 	},
 	{
+		key: 'find-in-document',
+		title: 'Find a word in the chapter you\'re in',
+		note: 'Ctrl+F (or the Find button) highlights every match in the open document at once, with arrows to step through them — and it never pops the keyboard up on a phone',
+		status: 'shipped',
+		shipped: '2026-07'
+	},
+	{
 		key: 'durable-backups',
 		title: 'Backups that never forget',
 		note: 'Daily off-site + a monthly copy kept forever',

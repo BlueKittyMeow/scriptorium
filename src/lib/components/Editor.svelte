@@ -3,8 +3,10 @@
 	import { Editor, Extension } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
 	import Placeholder from '@tiptap/extension-placeholder';
-	import { Plugin, PluginKey } from '@tiptap/pm/state';
+	import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 	import { Decoration, DecorationSet } from '@tiptap/pm/view';
+	import type { Node as PMNode } from '@tiptap/pm/model';
+	import { findOffsets } from '$lib/find-matches';
 
 	let {
 		docId,
@@ -85,6 +87,190 @@
 		}
 	});
 
+	// Find within the open document. A second, independent decoration plugin —
+	// the cross-document search above keeps its own key and its own decoration
+	// set, so the two never stomp each other.
+	const findKey = new PluginKey('findInDocument');
+	const FindInDocument = Extension.create({
+		name: 'findInDocument',
+		addProseMirrorPlugins() {
+			return [
+				new Plugin({
+					key: findKey,
+					state: {
+						init: () => DecorationSet.empty,
+						apply: (tr, decoSet) => {
+							const meta = tr.getMeta(findKey);
+							if (meta !== undefined) return meta;
+							return decoSet.map(tr.mapping, tr.doc);
+						}
+					},
+					props: {
+						decorations: (state) => findKey.getState(state)
+					}
+				})
+			];
+		}
+	});
+
+	let findOpen = $state(false);
+	let findTerm = $state('');
+	let findMatches = $state<{ from: number; to: number }[]>([]);
+	let findIndex = $state(0);
+	let findInputEl = $state<HTMLInputElement | undefined>(undefined);
+	let findRefreshQueued = false;
+
+	let findStatus = $derived(
+		findTerm.trim() === ''
+			? ''
+			: findMatches.length === 0
+				? 'No matches'
+				: `${findIndex + 1} of ${findMatches.length}`
+	);
+
+	/**
+	 * Every match of `term`, walked one text block at a time.
+	 *
+	 * Each block is flattened to a single string alongside a parallel array of
+	 * ProseMirror positions, one per character. That's what makes a match work
+	 * across mark boundaries — a word half in italics is still one run of text
+	 * here — while a match can never straddle two blocks.
+	 */
+	function collectMatches(term: string): { from: number; to: number }[] {
+		if (!editor) return [];
+		const out: { from: number; to: number }[] = [];
+		editor.state.doc.descendants((node, pos) => {
+			if (!node.isTextblock) return true;
+			let text = '';
+			const positions: number[] = [];
+			node.forEach((child, offset) => {
+				const base = pos + 1 + offset;
+				if (child.isText && child.text) {
+					for (let i = 0; i < child.text.length; i++) {
+						text += child.text[i];
+						positions.push(base + i);
+					}
+				} else {
+					// Inline leaves (a hard break, say) stand in as a newline so a
+					// typed term can't match straight through them.
+					text += '\n';
+					positions.push(base);
+				}
+			});
+			for (const idx of findOffsets(text, term)) {
+				const from = positions[idx];
+				const last = positions[idx + term.length - 1];
+				if (from === undefined || last === undefined) continue;
+				out.push({ from, to: last + 1 });
+			}
+			return false;
+		});
+		return out;
+	}
+
+	function findDecorations(doc: PMNode): DecorationSet {
+		return DecorationSet.create(
+			doc,
+			findMatches.map((m, i) =>
+				Decoration.inline(m.from, m.to, {
+					class: i === findIndex ? 'find-match find-match-current' : 'find-match'
+				})
+			)
+		);
+	}
+
+	/** Recompute matches and repaint the highlights. A no-op while the bar is closed. */
+	function refreshFind(resetIndex = false) {
+		if (!findOpen || !editor || editor.isDestroyed) return;
+		findMatches = collectMatches(findTerm);
+		if (resetIndex || findIndex >= findMatches.length) findIndex = 0;
+		editor.view.dispatch(
+			editor.state.tr.setMeta(findKey, findDecorations(editor.state.doc))
+		);
+	}
+
+	/**
+	 * Recompute after the document changed under us. Deferred a tick so we're
+	 * never dispatching from inside ProseMirror's own dispatch, and skipped
+	 * entirely while the bar is closed so typing costs nothing.
+	 */
+	function queueFindRefresh() {
+		if (!findOpen || findRefreshQueued) return;
+		findRefreshQueued = true;
+		setTimeout(() => {
+			findRefreshQueued = false;
+			refreshFind();
+		}, 0);
+	}
+
+	/**
+	 * Select and scroll to a match, wrapping at both ends. Never focuses the
+	 * editor — same reasoning as copyDocument below: focus would summon the
+	 * on-screen keyboard, and the caret belongs in the find input anyway.
+	 */
+	function gotoMatch(index: number) {
+		if (!editor || editor.isDestroyed || findMatches.length === 0) return;
+		const count = findMatches.length;
+		findIndex = ((index % count) + count) % count;
+		const match = findMatches[findIndex];
+		const tr = editor.state.tr;
+		const size = tr.doc.content.size;
+		// The position may be stale if an edit landed between recomputes — clamp,
+		// and fall back to a recompute rather than throwing.
+		const from = Math.min(match.from, size);
+		const to = Math.min(match.to, size);
+		try {
+			tr.setSelection(TextSelection.create(tr.doc, from, to));
+			tr.setMeta(findKey, findDecorations(tr.doc));
+		} catch {
+			refreshFind(true);
+			return;
+		}
+		tr.scrollIntoView();
+		editor.view.dispatch(tr);
+	}
+
+	function nextMatch() { gotoMatch(findIndex + 1); }
+	function prevMatch() { gotoMatch(findIndex - 1); }
+
+	/** Term changed: recompute from the top and land on the first match. */
+	function runFind(term: string) {
+		findTerm = term;
+		refreshFind(true);
+		if (findMatches.length > 0) gotoMatch(0);
+	}
+
+	function openFind() {
+		findOpen = true;
+		// Focus the find INPUT, never the editor. Same autofocus-after-click
+		// caveat as the title rename field, hence the timeout.
+		setTimeout(() => {
+			findInputEl?.focus();
+			findInputEl?.select();
+		}, 0);
+	}
+
+	function closeFind() {
+		findOpen = false;
+		findTerm = '';
+		findMatches = [];
+		findIndex = 0;
+		if (editor) editor.view.dispatch(editor.state.tr.setMeta(findKey, DecorationSet.empty));
+	}
+
+	function handleWindowKeydown(e: KeyboardEvent) {
+		// Stay out of the way while the doc-title rename input is open.
+		if (editingTitle) return;
+		if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+			// Deliberately replaces the browser's native find: ours knows about
+			// the editor's own scroll container.
+			e.preventDefault();
+			openFind();
+		} else if (e.key === 'Escape' && findOpen) {
+			closeFind();
+		}
+	}
+
 	function countWords(text: string): number {
 		return text.trim().split(/\s+/).filter(Boolean).length;
 	}
@@ -156,7 +342,8 @@
 				Placeholder.configure({
 					placeholder: 'Begin writing...'
 				}),
-				SearchHighlight
+				SearchHighlight,
+				FindInDocument
 			],
 			content: initialContent,
 			// Construct with the mode already applied so a read-mode document is
@@ -171,9 +358,13 @@
 				updateWordCount();
 				scheduleSave();
 			},
-			onTransaction: () => {
+			onTransaction: ({ transaction }) => {
 				editor = editor;
 				updateSelectionWordCount();
+				// Editing with the find bar open must not leave stale highlights.
+				// Only on a real content change — a decoration-only transaction
+				// would otherwise queue itself forever.
+				if (transaction.docChanged) queueFindRefresh();
 			}
 		});
 		// Belt and braces alongside the `editable` constructor option: setMode is
@@ -398,6 +589,8 @@
 	function redo() { editor?.chain().focus().redo().run(); }
 </script>
 
+<svelte:window onkeydown={handleWindowKeydown} />
+
 <div class="editor-container">
 	<div class="editor-header">
 		<div class="title-row">
@@ -448,7 +641,28 @@
 			<button class="tb-btn" onclick={copyDocument} title="Copy the whole document">
 				{copyFlash === 'copied' ? 'Copied' : copyFlash === 'failed' ? 'Copy failed' : 'Copy'}
 			</button>
+			<button class="tb-btn" class:active={findOpen} onclick={() => findOpen ? closeFind() : openFind()} title="Find in this document (Ctrl+F)" aria-label="Find in this document">Find</button>
 		</div>
+		{#if findOpen}
+			<div class="find-bar">
+				<input
+					class="find-input"
+					bind:this={findInputEl}
+					value={findTerm}
+					placeholder="Find in document"
+					aria-label="Find in document"
+					oninput={(e) => runFind(e.currentTarget.value)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) prevMatch(); else nextMatch(); }
+						if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+					}}
+				/>
+				<span class="find-count">{findStatus}</span>
+				<button class="tb-btn" onclick={prevMatch} disabled={findMatches.length === 0} title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
+				<button class="tb-btn" onclick={nextMatch} disabled={findMatches.length === 0} title="Next match (Enter)" aria-label="Next match">↓</button>
+				<button class="tb-btn" onclick={closeFind} title="Close find (Escape)" aria-label="Close find">✕</button>
+			</div>
+		{/if}
 	</div>
 
 	<div class="editor-scroll" bind:this={scrollContainer}>
@@ -574,6 +788,45 @@
 		color: var(--text-heading);
 	}
 
+	.tb-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	/* Find bar — sits below the toolbar row, inside the header. It's already
+	   clear of the fixed mobile hamburger button, which overlaps the title row
+	   above it, so it needs no gutter of its own. */
+	.find-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0 1.5rem 0.5rem;
+	}
+
+	.find-input {
+		flex: 1;
+		min-width: 0;
+		max-width: 22rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		color: var(--text);
+		background: var(--bg);
+		border: 1px solid var(--border-input);
+		border-radius: 4px;
+		padding: 0.25rem 0.5rem;
+	}
+
+	.find-input:focus {
+		outline: none;
+		border-color: var(--border-active);
+	}
+
+	.find-count {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		min-width: 5rem;
+	}
+
 	.tb-sep {
 		width: 1px;
 		background: var(--border);
@@ -680,6 +933,18 @@
 		100% { background: transparent; }
 	}
 
+	/* Find-in-document highlights. Unlike .search-highlight these are painted
+	   by a decoration set that we own and repaint, so they simply persist —
+	   no animation, no fade — until the term changes or the bar closes. */
+	:global(.find-match) {
+		background: var(--find-match);
+		border-radius: 2px;
+	}
+
+	:global(.find-match-current) {
+		background: var(--find-match-current);
+	}
+
 	.editor-footer {
 		display: flex;
 		justify-content: space-between;
@@ -753,6 +1018,21 @@
 		.mode-toggle button {
 			min-height: 2rem;
 			padding: 0.25rem 0.6rem;
+		}
+
+		.find-bar {
+			padding: 0 1rem 0.5rem;
+			flex-wrap: wrap;
+		}
+
+		.find-input {
+			/* 16px exactly — anything smaller makes iOS zoom the page on focus. */
+			font-size: 16px;
+		}
+
+		.find-bar .tb-btn {
+			min-width: 2rem;
+			min-height: 2rem;
 		}
 
 		.editor-content {
