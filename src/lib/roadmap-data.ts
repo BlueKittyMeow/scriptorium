@@ -56,6 +56,13 @@ export const ROADMAP: RoadmapItem[] = [
 		shipped: '2026-07'
 	},
 	{
+		key: 'rename-chapters',
+		title: 'Rename chapters & folders',
+		note: 'Pencil button on the editor title, rename in the binder menu — plus the phone menu button no longer covers your title',
+		status: 'shipped',
+		shipped: '2026-07'
+	},
+	{
 		key: 'durable-backups',
 		title: 'Backups that never forget',
 		note: 'Daily off-site + a monthly copy kept forever',
