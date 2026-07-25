@@ -369,7 +369,8 @@
 		});
 		// Belt and braces alongside the `editable` constructor option: setMode is
 		// the only other path that touches editability, and it runs after mount.
-		editor.setEditable(mode === 'edit');
+		// emitUpdate MUST stay false — see setMode.
+		editor.setEditable(mode === 'edit', false);
 		updateWordCount();
 		registerFlush?.(flushSave);
 	});
@@ -521,7 +522,10 @@
 		if (mode === 'edit') await flushSave();
 		mode = next;
 		try { localStorage.setItem('scriptorium-editor-mode', mode); } catch { /* quota exceeded */ }
-		editor?.setEditable(mode === 'edit');
+		// emitUpdate=false: TipTap's setEditable emits an update by default, which
+		// our onUpdate reads as "the writer typed something" and schedules a save.
+		// Merely looking at a document would then rewrite it and bump updated_at.
+		editor?.setEditable(mode === 'edit', false);
 	}
 
 	let copyFlash: 'idle' | 'copied' | 'failed' = $state('idle');

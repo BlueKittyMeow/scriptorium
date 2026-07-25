@@ -72,13 +72,26 @@ describe('Editor: mode drives contenteditable', () => {
 	});
 
 	it('calls setEditable with the mode, not a bare boolean', () => {
-		expect(SOURCE).toMatch(/setEditable\(mode === 'edit'\)/);
+		expect(SOURCE).toMatch(/setEditable\(mode === 'edit', false\)/);
 	});
 
 	it('applies the mode once the editor is constructed on mount', () => {
 		const onMountFn = SOURCE.match(/onMount\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] || '';
 		expect(onMountFn).toBeTruthy();
-		expect(onMountFn).toMatch(/setEditable\(mode === 'edit'\)/);
+		expect(onMountFn).toMatch(/setEditable\(mode === 'edit', false\)/);
+	});
+
+	it('never lets setEditable emit an update — a mode toggle must not schedule a save', () => {
+		// TipTap's setEditable(editable, emitUpdate = true) emits "update" by
+		// default. Our onUpdate reads that as the writer typing and schedules a
+		// save, so merely switching Read→Edit rewrote the document and bumped
+		// updated_at. Verified live in the browser before the fix. Every call
+		// site must pass emitUpdate: false.
+		const calls = SOURCE.match(/setEditable\([^)]*\)/g) || [];
+		expect(calls.length).toBeGreaterThan(0);
+		for (const call of calls) {
+			expect(call).toMatch(/,\s*false\)$/);
+		}
 	});
 });
 
