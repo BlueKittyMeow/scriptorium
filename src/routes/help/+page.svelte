@@ -313,11 +313,36 @@
 			<li><strong>Collapse the binder:</strong> click the ◀ toggle to give your text the full width. On a phone, the binder slides over the editor — tap ☰ to open it, tap a document (or the dimmed area) to close it.</li>
 		</ul>
 
+		<h3>Reading and editing</h3>
+		<p>
+			At the left end of the toolbar sit two buttons: <em>Read</em> and <em>Edit</em>.
+			Documents open in <em>Read</em>, where the text can't be changed — which is the
+			point. On a phone, tapping into editable text pops the on-screen keyboard up
+			over half the screen, even when all you wanted was to reread a paragraph or
+			select a line to copy. In <em>Read</em> mode you can select and scroll freely
+			and the keyboard stays down. Tap <em>Edit</em> when you want to write; the
+			formatting buttons appear alongside it. Your choice is remembered across
+			documents and visits, so if you mostly write on a laptop you can leave it in
+			<em>Edit</em> and forget this exists.
+		</p>
+
 		<h3>The editor</h3>
 		<p>
-			The toolbar covers the essentials: bold, italic, three heading levels, bullet
-			and numbered lists, block quotes, and undo/redo. The usual shortcuts work too
-			(Ctrl+B, Ctrl+I, Ctrl+Z).
+			In <em>Edit</em> mode the toolbar covers the essentials: bold, italic, three
+			heading levels, bullet and numbered lists, block quotes, and undo/redo. The
+			usual shortcuts work too (Ctrl+B, Ctrl+I, Ctrl+Z).
+		</p>
+
+		<h3>Copying a document</h3>
+		<p>
+			The <em>Copy</em> button at the right end of the toolbar takes the whole open
+			document — no selecting, no scrolling to the end. It copies both a formatted
+			and a plain version, so pasting into a word processor or email keeps your
+			italics and headings, while pasting somewhere plain still gives you clean
+			paragraphs. The button says <em>Copied</em> for a moment to confirm (or
+			<em>Copy failed</em> if your browser refused clipboard access — some do unless
+			the page is served over https). <em>Copy</em> is available in both Read and
+			Edit mode.
 		</p>
 
 		<h3>Autosave</h3>
@@ -331,9 +356,10 @@
 
 		<h3>Spellcheck</h3>
 		<p>
-			The <em>ABC</em> button at the right end of the toolbar turns your browser's
-			spellcheck on or off — handy to silence the red squiggles under invented names
-			and places. The footer shows the current state, and your choice is remembered.
+			The <em>ABC</em> button, last of the formatting buttons in <em>Edit</em> mode,
+			turns your browser's spellcheck on or off — handy to silence the red squiggles
+			under invented names and places. The footer shows the current state while
+			you're editing, and your choice is remembered.
 			It works exactly the same by tap on a phone — the toolbar just wraps onto a
 			second row when the screen's too narrow to fit everything in one line.
 		</p>

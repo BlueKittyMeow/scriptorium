@@ -50,6 +50,16 @@
 			? localStorage.getItem('scriptorium-spellcheck') !== 'false'
 			: true
 	);
+	// Read/Edit mode. A global preference, NOT per document — switching docs
+	// leaves it alone. Defaults to 'read': in read mode the editor isn't
+	// contenteditable, so tapping to select or copy text on a phone doesn't
+	// summon the on-screen keyboard.
+	let mode = $state<'read' | 'edit'>(
+		typeof localStorage !== 'undefined' &&
+			localStorage.getItem('scriptorium-editor-mode') === 'edit'
+			? 'edit'
+			: 'read'
+	);
 
 	// ProseMirror decoration plugin for search highlights
 	const highlightKey = new PluginKey('searchHighlight');
@@ -149,6 +159,9 @@
 				SearchHighlight
 			],
 			content: initialContent,
+			// Construct with the mode already applied so a read-mode document is
+			// never editable for even a frame.
+			editable: mode === 'edit',
 			editorProps: {
 				attributes: {
 					spellcheck: String(spellcheck)
@@ -163,12 +176,16 @@
 				updateSelectionWordCount();
 			}
 		});
+		// Belt and braces alongside the `editable` constructor option: setMode is
+		// the only other path that touches editability, and it runs after mount.
+		editor.setEditable(mode === 'edit');
 		updateWordCount();
 		registerFlush?.(flushSave);
 	});
 
 	onDestroy(() => {
 		clearTimeout(saveTimeout);
+		clearTimeout(copyTimeout);
 		if (editor && saveStatus !== 'saved' && currentDocId) {
 			// Use keepalive to ensure the save completes even during page unload
 			fetch(`/api/documents/${currentDocId}`, {
@@ -305,6 +322,49 @@
 		onSearchHighlightDone?.();
 	}
 
+	/** Switch between read and edit mode, persisting the choice. */
+	async function setMode(next: 'read' | 'edit') {
+		if (next === mode) return;
+		// Leaving edit mode: flush whatever the debounce hasn't written yet, so
+		// no keystrokes are lost on the way out.
+		if (mode === 'edit') await flushSave();
+		mode = next;
+		try { localStorage.setItem('scriptorium-editor-mode', mode); } catch { /* quota exceeded */ }
+		editor?.setEditable(mode === 'edit');
+	}
+
+	let copyFlash: 'idle' | 'copied' | 'failed' = $state('idle');
+	let copyTimeout: any = null;
+
+	/**
+	 * Copy the whole document to the clipboard in two flavours, so a paste into
+	 * a word processor keeps italics and headings. Deliberately never focuses
+	 * the editor — that would pop the on-screen keyboard on a phone.
+	 */
+	async function copyDocument() {
+		if (!editor) return;
+		const html = editor.getHTML();
+		const plain = editor.getText({ blockSeparator: '\n\n' });
+		let copied = false;
+		try {
+			if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+				await navigator.clipboard.write([
+					new ClipboardItem({
+						'text/html': new Blob([html], { type: 'text/html' }),
+						'text/plain': new Blob([plain], { type: 'text/plain' })
+					})
+				]);
+			} else {
+				// Older/locked-down browsers: plain text is better than nothing.
+				await navigator.clipboard.writeText(plain);
+			}
+			copied = true;
+		} catch { /* clipboard blocked or unavailable */ }
+		copyFlash = copied ? 'copied' : 'failed';
+		clearTimeout(copyTimeout);
+		copyTimeout = setTimeout(() => { copyFlash = 'idle'; }, 2000);
+	}
+
 	function toggleSpellcheck() {
 		spellcheck = !spellcheck;
 		try { localStorage.setItem('scriptorium-spellcheck', String(spellcheck)); } catch { /* quota exceeded */ }
@@ -362,21 +422,32 @@
 			{/if}
 		</div>
 		<div class="editor-toolbar">
-			<button class="tb-btn" class:active={editor?.isActive('bold')} onclick={toggleBold} title="Bold (Ctrl+B)"><strong>B</strong></button>
-			<button class="tb-btn" class:active={editor?.isActive('italic')} onclick={toggleItalic} title="Italic (Ctrl+I)"><em>I</em></button>
+			<div class="mode-toggle">
+				<button class="tb-btn" class:active={mode === 'read'} aria-pressed={mode === 'read'} onclick={() => setMode('read')} title="Read mode — select and copy without the keyboard">Read</button>
+				<button class="tb-btn" class:active={mode === 'edit'} aria-pressed={mode === 'edit'} onclick={() => setMode('edit')} title="Edit mode — write and format">Edit</button>
+			</div>
 			<span class="tb-sep"></span>
-			<button class="tb-btn" class:active={editor?.isActive('heading', { level: 1 })} onclick={() => toggleHeading(1)} title="Heading 1">H1</button>
-			<button class="tb-btn" class:active={editor?.isActive('heading', { level: 2 })} onclick={() => toggleHeading(2)} title="Heading 2">H2</button>
-			<button class="tb-btn" class:active={editor?.isActive('heading', { level: 3 })} onclick={() => toggleHeading(3)} title="Heading 3">H3</button>
-			<span class="tb-sep"></span>
-			<button class="tb-btn" class:active={editor?.isActive('bulletList')} onclick={toggleBulletList} title="Bullet list">•</button>
-			<button class="tb-btn" class:active={editor?.isActive('orderedList')} onclick={toggleOrderedList} title="Numbered list">1.</button>
-			<button class="tb-btn" class:active={editor?.isActive('blockquote')} onclick={toggleBlockquote} title="Block quote">"</button>
-			<span class="tb-sep"></span>
-			<button class="tb-btn" onclick={undo} title="Undo (Ctrl+Z)">↩</button>
-			<button class="tb-btn" onclick={redo} title="Redo (Ctrl+Shift+Z)">↪</button>
-			<span class="tb-sep"></span>
-			<button class="tb-btn" class:active={spellcheck} onclick={toggleSpellcheck} title="Toggle spellcheck">ABC</button>
+			{#if mode === 'edit'}
+				<button class="tb-btn" class:active={editor?.isActive('bold')} onclick={toggleBold} title="Bold (Ctrl+B)"><strong>B</strong></button>
+				<button class="tb-btn" class:active={editor?.isActive('italic')} onclick={toggleItalic} title="Italic (Ctrl+I)"><em>I</em></button>
+				<span class="tb-sep"></span>
+				<button class="tb-btn" class:active={editor?.isActive('heading', { level: 1 })} onclick={() => toggleHeading(1)} title="Heading 1">H1</button>
+				<button class="tb-btn" class:active={editor?.isActive('heading', { level: 2 })} onclick={() => toggleHeading(2)} title="Heading 2">H2</button>
+				<button class="tb-btn" class:active={editor?.isActive('heading', { level: 3 })} onclick={() => toggleHeading(3)} title="Heading 3">H3</button>
+				<span class="tb-sep"></span>
+				<button class="tb-btn" class:active={editor?.isActive('bulletList')} onclick={toggleBulletList} title="Bullet list">•</button>
+				<button class="tb-btn" class:active={editor?.isActive('orderedList')} onclick={toggleOrderedList} title="Numbered list">1.</button>
+				<button class="tb-btn" class:active={editor?.isActive('blockquote')} onclick={toggleBlockquote} title="Block quote">"</button>
+				<span class="tb-sep"></span>
+				<button class="tb-btn" onclick={undo} title="Undo (Ctrl+Z)">↩</button>
+				<button class="tb-btn" onclick={redo} title="Redo (Ctrl+Shift+Z)">↪</button>
+				<span class="tb-sep"></span>
+				<button class="tb-btn" class:active={spellcheck} onclick={toggleSpellcheck} title="Toggle spellcheck">ABC</button>
+				<span class="tb-sep"></span>
+			{/if}
+			<button class="tb-btn" onclick={copyDocument} title="Copy the whole document">
+				{copyFlash === 'copied' ? 'Copied' : copyFlash === 'failed' ? 'Copy failed' : 'Copy'}
+			</button>
 		</div>
 	</div>
 
@@ -397,7 +468,9 @@
 					Snapshots
 				</button>
 			{/if}
-			<span class="spellcheck-indicator">{spellcheck ? 'Spellcheck on' : 'Spellcheck off'}</span>
+			{#if mode === 'edit'}
+				<span class="spellcheck-indicator">{spellcheck ? 'Spellcheck on' : 'Spellcheck off'}</span>
+			{/if}
 			<span class="save-status" class:saved={saveStatus === 'saved'} class:saving={saveStatus === 'saving'} class:unsaved={saveStatus === 'unsaved'}>
 				{#if saveStatus === 'saved'}Saved{:else if saveStatus === 'saving'}Saving...{:else}Unsaved changes{/if}
 			</span>
@@ -470,6 +543,12 @@
 		gap: 2px;
 		padding: 0.5rem 1.5rem;
 		flex-wrap: wrap;
+	}
+
+	/* Segmented Read/Edit control at the head of the toolbar */
+	.mode-toggle {
+		display: flex;
+		gap: 2px;
 	}
 
 	.tb-btn {
@@ -669,6 +748,11 @@
 
 		.editor-toolbar {
 			padding: 0.25rem 1rem;
+		}
+
+		.mode-toggle button {
+			min-height: 2rem;
+			padding: 0.25rem 0.6rem;
 		}
 
 		.editor-content {

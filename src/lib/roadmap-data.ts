@@ -63,6 +63,13 @@ export const ROADMAP: RoadmapItem[] = [
 		shipped: '2026-07'
 	},
 	{
+		key: 'reading-mode',
+		title: 'Reading mode, and copy a whole chapter',
+		note: 'Documents open in Read mode, so tapping to select text on a phone no longer summons the keyboard — tap Edit when you want to write. Copy lifts the whole document with its italics and headings intact',
+		status: 'shipped',
+		shipped: '2026-07'
+	},
+	{
 		key: 'durable-backups',
 		title: 'Backups that never forget',
 		note: 'Daily off-site + a monthly copy kept forever',
