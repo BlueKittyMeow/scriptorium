@@ -9,9 +9,16 @@
    retries). Before restarting, check for recent writing:
    ```bash
    node -e "const D=require('better-sqlite3');const db=new D(process.env.DB,{readonly:true});
-     const r=db.prepare(\"SELECT COUNT(*) c FROM documents WHERE updated_at > datetime('now','-10 minutes')\").get();
+     const r=db.prepare(\"SELECT COUNT(*) c FROM documents WHERE datetime(updated_at) > datetime('now','-10 minutes')\").get();
      console.log(r.c ? 'ACTIVE — wait' : 'quiet — safe to restart')"
    ```
+   **`datetime(updated_at)` is load-bearing.** We store ISO-8601
+   (`2026-07-25T04:33:21.893Z`); SQLite's `datetime('now')` returns
+   `2026-07-25 22:22:58`. Comparing them as raw strings compares `'T'` against
+   `' '`, and `'T'` sorts higher — so every document touched *today* reads as
+   active. The earlier version of this snippet omitted the wrapper and reported
+   12 active writers when the last write was 18 hours old (caught 2026-07-25).
+   Wrapping both sides normalises the format and makes the comparison real.
    (run on the server with DB pointed at the prod file). If active, wait a few
    minutes and re-check.
 2. **Backup before schema-touching deploys.** Any deploy whose diff touches
