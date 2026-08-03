@@ -1444,6 +1444,8 @@
 		min-height: 0;
 	}
 
+	/* Chrome above a scrolling read-only view — same rule as the editor header:
+	   a selection dragged out of the snapshot text must not swallow the banner. */
 	.preview-banner {
 		display: flex;
 		justify-content: space-between;
@@ -1453,6 +1455,8 @@
 		border-bottom: 2px solid var(--saving);
 		font-size: 0.85rem;
 		color: var(--text-heading);
+		-webkit-user-select: none;
+		user-select: none;
 	}
 
 	.preview-actions {

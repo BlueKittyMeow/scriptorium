@@ -178,6 +178,15 @@
 		color: var(--accent);
 	}
 
+	/* A button's label is never something you meant to copy, but a selection
+	   dragged across one picks it up anyway — most visibly on a phone, where
+	   selecting inside a document and scrolling sweeps the selection through
+	   whatever chrome scrolls past. Buttons opt out everywhere. */
+	:global(button) {
+		-webkit-user-select: none;
+		user-select: none;
+	}
+
 	.app {
 		min-height: 100vh;
 	}

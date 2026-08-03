@@ -703,9 +703,17 @@
 		height: 100%;
 	}
 
+	/* Chrome, not prose. Selecting inside the document and then dragging (or
+	   scrolling, on a phone, where the selection extends as the page moves)
+	   past the top of the text used to swallow the document title and the
+	   toolbar labels into the selection. Nothing here is ever worth copying,
+	   so it opts out entirely — the .editor-content rule below keeps the prose
+	   itself selectable, and the inputs re-enable selection for themselves. */
 	.editor-header {
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-surface);
+		-webkit-user-select: none;
+		user-select: none;
 	}
 
 	.title-row {
@@ -733,6 +741,10 @@
 		border-radius: 4px;
 		padding: 0.1rem 0.4rem;
 		background: var(--bg-surface);
+		/* Opt back in — a text field inheriting user-select:none loses its
+		   selection handles and caret dragging on iOS. */
+		-webkit-user-select: text;
+		user-select: text;
 	}
 
 	.doc-title-input:focus {
@@ -818,6 +830,9 @@
 		border: 1px solid var(--border-input);
 		border-radius: 4px;
 		padding: 0.25rem 0.5rem;
+		/* See .doc-title-input — the header opts out of selection, fields opt in. */
+		-webkit-user-select: text;
+		user-select: text;
 	}
 
 	.find-input:focus {
@@ -849,6 +864,10 @@
 		margin: 0 auto;
 		padding: 2rem 1.5rem;
 		min-height: 100%;
+		/* The one region that is meant to be selected, stated explicitly so it
+		   survives any future user-select:none on an ancestor. */
+		-webkit-user-select: text;
+		user-select: text;
 	}
 
 	/* TipTap editor styling */
@@ -949,6 +968,8 @@
 		background: var(--find-match-current);
 	}
 
+	/* Same story as .editor-header: a selection dragged off the bottom of the
+	   prose must not pick up the word count or the save status. */
 	.editor-footer {
 		display: flex;
 		justify-content: space-between;
@@ -958,6 +979,8 @@
 		border-top: 1px solid var(--border);
 		font-size: 0.8rem;
 		color: var(--text-secondary);
+		-webkit-user-select: none;
+		user-select: none;
 	}
 
 	.footer-right {
