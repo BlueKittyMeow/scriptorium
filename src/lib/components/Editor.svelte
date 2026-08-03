@@ -633,7 +633,9 @@
 					autofocus
 				/>
 			{:else}
-				<h1 class="doc-title">{title}</h1>
+				<!-- title attribute so a long name truncated by the ellipsis is still
+				     readable on hover -->
+				<h1 class="doc-title" title={title}>{title}</h1>
 				{#if onrename}
 					<button class="rename-btn" onclick={startTitleRename} title="Rename document" aria-label="Rename document">✎</button>
 				{/if}
@@ -749,11 +751,23 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.75rem 1.5rem 0;
+		/* Keep clear of the fixed top bar overhead — it floats over this corner
+		   with z-index 200, so anything reaching under it is unusable. The width
+		   is measured in +layout.svelte (it grows with the username) and is 0
+		   wherever the bar isn't overhead, which collapses this to the 1.5rem. */
+		padding-right: calc(var(--top-bar-width, 0px) + 1.5rem);
 	}
 
 	.doc-title {
-		flex: 1;
+		/* Sized to its text, not stretched to fill the row. Stretching pushed
+		   the rename and copy buttons to the row's right edge, where they
+		   landed underneath the fixed top bar (z-index 200) and tangled with
+		   Sign Out / ? / the theme toggle. They belong beside the title. */
+		flex: 0 1 auto;
 		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		font-size: 1.3rem;
 		font-weight: 600;
 		color: var(--text-heading);

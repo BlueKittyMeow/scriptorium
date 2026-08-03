@@ -17,6 +17,17 @@
 		window.location.href = '/login';
 	}
 
+	// The top bar is fixed to the top-right corner, so it floats over whatever
+	// the page puts there — on the workspace that's the document title row, and
+	// its rename/copy buttons ended up underneath Sign Out and the theme toggle.
+	// Its width depends on the username, so it's measured rather than guessed and
+	// published as --top-bar-width for pages to reserve. It reads 0 when the bar
+	// is hidden (mobile workspace) or before mount, which is the right answer.
+	let topBarWidth = $state(0);
+	$effect(() => {
+		document.documentElement.style.setProperty('--top-bar-width', `${topBarWidth}px`);
+	});
+
 	const themeIcon = $derived(theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◑');
 	const themeTitle = $derived(
 		theme === 'dark' ? 'Dark mode (click to cycle)'
@@ -53,7 +64,7 @@
 </script>
 
 {#if mounted}
-	<div class="top-bar" class:on-workspace={isWorkspace}>
+	<div class="top-bar" class:on-workspace={isWorkspace} bind:clientWidth={topBarWidth}>
 		{#if data.user}
 			<span class="user-info">{data.user.username} <span class="role-tag">{data.user.role}</span></span>
 			{#if data.user.role === 'archivist'}
