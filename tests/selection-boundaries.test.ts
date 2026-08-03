@@ -71,3 +71,46 @@ describe('Editor: header text fields opt back in', () => {
 		expectUserSelect(rule(EDITOR, '.find-input'), 'text');
 	});
 });
+
+describe('Editor: copying the title', () => {
+	const copyFn = EDITOR.match(/async function copyTitle\([\s\S]*?\n\t\}/)?.[0] || '';
+
+	it('defines the handler', () => {
+		expect(copyFn).toBeTruthy();
+	});
+
+	it('copies the title as plain text — a title has no formatting to keep', () => {
+		expect(copyFn).toContain('navigator.clipboard.writeText(title)');
+	});
+
+	it('reports success and failure transiently, like the document Copy button', () => {
+		expect(copyFn).toMatch(/try \{[\s\S]*\} catch/);
+		expect(EDITOR).toMatch(/let titleCopyFlash[^=]*= \$state\('idle'\)/);
+		expect(copyFn).toMatch(/setTimeout\(\(\) => \{ titleCopyFlash = 'idle'; \}, 2000\)/);
+	});
+
+	it('renders a button in the title row, independent of the rename pencil', () => {
+		const titleRow = EDITOR.match(/<div class="title-row">[\s\S]*?\n\t\t<\/div>/)?.[0] || '';
+		expect(titleRow).toBeTruthy();
+		expect(titleRow).toContain('onclick={copyTitle}');
+		// Inside the row but outside the {#if onrename} block — a read-only
+		// document still needs a way to get its title out.
+		const renameGated = titleRow.match(/\{#if onrename\}[\s\S]*?\{\/if\}/)?.[0] || '';
+		expect(renameGated).toBeTruthy();
+		expect(renameGated).not.toContain('copyTitle');
+	});
+
+	it('labels the button for screen readers, not just by its glyph', () => {
+		expect(EDITOR).toContain('aria-label="Copy the document title"');
+	});
+
+	it('gives it a real touch target on phones, alongside the rename pencil', () => {
+		const mobileBlock = EDITOR.slice(EDITOR.indexOf('@media (max-width: 768px)'));
+		expect(mobileBlock).toMatch(/\.title-copy-btn\s*\{[^}]*min-height:\s*2rem/);
+	});
+
+	it('clears its timeout on destroy so it cannot fire after teardown', () => {
+		const onDestroyFn = EDITOR.match(/onDestroy\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] || '';
+		expect(onDestroyFn).toContain('clearTimeout(titleCopyTimeout)');
+	});
+});

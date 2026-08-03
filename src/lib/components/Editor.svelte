@@ -378,6 +378,7 @@
 	onDestroy(() => {
 		clearTimeout(saveTimeout);
 		clearTimeout(copyTimeout);
+		clearTimeout(titleCopyTimeout);
 		if (editor && saveStatus !== 'saved' && currentDocId) {
 			// Use keepalive to ensure the save completes even during page unload
 			fetch(`/api/documents/${currentDocId}`, {
@@ -560,6 +561,26 @@
 		copyTimeout = setTimeout(() => { copyFlash = 'idle'; }, 2000);
 	}
 
+	let titleCopyFlash: 'idle' | 'copied' | 'failed' = $state('idle');
+	let titleCopyTimeout: any = null;
+
+	/**
+	 * Copy just the document title. The header opts out of text selection so a
+	 * selection dragged out of the prose can't swallow it, which also means the
+	 * title can no longer be swiped by hand — this button is how you get it.
+	 * Plain text only: a title has no formatting to preserve.
+	 */
+	async function copyTitle() {
+		let copied = false;
+		try {
+			await navigator.clipboard.writeText(title);
+			copied = true;
+		} catch { /* clipboard blocked or unavailable */ }
+		titleCopyFlash = copied ? 'copied' : 'failed';
+		clearTimeout(titleCopyTimeout);
+		titleCopyTimeout = setTimeout(() => { titleCopyFlash = 'idle'; }, 2000);
+	}
+
 	function toggleSpellcheck() {
 		spellcheck = !spellcheck;
 		try { localStorage.setItem('scriptorium-spellcheck', String(spellcheck)); } catch { /* quota exceeded */ }
@@ -616,6 +637,13 @@
 				{#if onrename}
 					<button class="rename-btn" onclick={startTitleRename} title="Rename document" aria-label="Rename document">✎</button>
 				{/if}
+				<button
+					class="title-copy-btn"
+					class:flashing={titleCopyFlash !== 'idle'}
+					onclick={copyTitle}
+					title={titleCopyFlash === 'failed' ? 'Copy failed' : 'Copy the document title'}
+					aria-label="Copy the document title"
+				>{titleCopyFlash === 'copied' ? '✓' : titleCopyFlash === 'failed' ? '✕' : '⧉'}</button>
 			{/if}
 		</div>
 		<div class="editor-toolbar">
@@ -751,7 +779,8 @@
 		outline: none;
 	}
 
-	.rename-btn {
+	.rename-btn,
+	.title-copy-btn {
 		background: none;
 		border: 1px solid transparent;
 		border-radius: 4px;
@@ -762,10 +791,16 @@
 		flex-shrink: 0;
 	}
 
-	.rename-btn:hover {
+	.rename-btn:hover,
+	.title-copy-btn:hover {
 		background: var(--bg-elevated);
 		border-color: var(--border-input);
 		color: var(--text-heading);
+	}
+
+	/* Holds the tick (or cross) legible for the two seconds it shows. */
+	.title-copy-btn.flashing {
+		color: var(--accent);
 	}
 
 	.editor-toolbar {
@@ -1033,7 +1068,8 @@
 			font-size: 1.1rem;
 		}
 
-		.rename-btn {
+		.rename-btn,
+		.title-copy-btn {
 			min-width: 2rem;
 			min-height: 2rem;
 		}

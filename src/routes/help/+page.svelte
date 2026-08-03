@@ -344,6 +344,13 @@
 			the page is served over https). <em>Copy</em> is available in both Read and
 			Edit mode.
 		</p>
+		<p>
+			To copy just the document's <em>title</em>, use the small ⧉ button beside it at
+			the top of the editor. It shows a ✓ for a moment to confirm. The title and the
+			rest of the editor's chrome — the toolbar, the word count, the save indicator —
+			deliberately can't be selected by hand, so that selecting a passage and then
+			scrolling on a phone never sweeps them into what you copy.
+		</p>
 
 		<h3>Autosave</h3>
 		<p>
