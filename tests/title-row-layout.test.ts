@@ -69,6 +69,31 @@ describe('Title row: reserves the fixed top bar footprint', () => {
 	});
 });
 
+describe('Layout: the bar slims down on the writing screen', () => {
+	// With a long username the account block measured 353px over a 520px editor
+	// header at 820px wide, leaving 41px for the title. Dropping the name and
+	// role chip there took the bar to 210px and the title to 184px. Every
+	// control stays; only the two purely informational bits go.
+	it('hides the username and role chip while a document is open', () => {
+		expect(LAYOUT).toMatch(/\.top-bar\.on-workspace \.user-info \{[^}]*display:\s*none/);
+	});
+
+	it('keeps every actual control on the writing screen', () => {
+		// Admin, Sign Out, help and the theme toggle must not be inside the rule.
+		const slimRule = LAYOUT.match(/\.top-bar\.on-workspace \.user-info \{[^}]*\}/)?.[0] || '';
+		expect(slimRule).toBeTruthy();
+		for (const cls of ['admin-link', 'logout-btn', 'help-link', 'theme-toggle']) {
+			expect(slimRule).not.toContain(cls);
+		}
+	});
+
+	it('leaves the Library page showing the full account block', () => {
+		// The rule is scoped to .on-workspace, which is set from the route.
+		expect(LAYOUT).toMatch(/class:on-workspace=\{isWorkspace\}/);
+		expect(LAYOUT).toMatch(/const isWorkspace = \$derived\(/);
+	});
+});
+
 describe('Layout: publishes the top bar width', () => {
 	it('measures the bar rather than hardcoding a width', () => {
 		// It grows with the username — "UponMidnight archivist Admin Sign Out"

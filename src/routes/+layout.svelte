@@ -222,6 +222,16 @@
 		white-space: nowrap;
 	}
 
+	/* The writing screen doesn't need to tell you who you are, and this bar
+	   floats over the same corner as the document title — with a long username
+	   the account block claimed 353px of a 520px editor header, crushing the
+	   title. Dropping the name and role chip here (controls all stay) roughly
+	   halves the footprint the title row has to reserve. The Library page keeps
+	   the full block, which is where knowing your role is actually useful. */
+	.top-bar.on-workspace .user-info {
+		display: none;
+	}
+
 	.role-tag {
 		font-size: 0.7rem;
 		background: var(--accent-bg);
