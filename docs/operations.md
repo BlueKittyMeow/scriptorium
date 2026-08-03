@@ -6,21 +6,34 @@
 
 1. **Activity check first.** A restart mid-keystroke is the only real user-facing
    risk (the outage itself is ~3–5s; the editor surfaces save failures and
-   retries). Before restarting, check for recent writing:
+   retries). Before restarting, check for recent writing — run this **on the
+   server, from the repo directory**:
    ```bash
-   node -e "const D=require('better-sqlite3');const db=new D(process.env.DB,{readonly:true});
-     const r=db.prepare(\"SELECT COUNT(*) c FROM documents WHERE datetime(updated_at) > datetime('now','-10 minutes')\").get();
-     console.log(r.c ? 'ACTIVE — wait' : 'quiet — safe to restart')"
+   cd ~/apps/scriptorium && DB=/mnt/media/scriptorium/data/scriptorium.db \
+     node scripts/activity-check.js        # optional arg: window in minutes (default 10)
    ```
-   **`datetime(updated_at)` is load-bearing.** We store ISO-8601
-   (`2026-07-25T04:33:21.893Z`); SQLite's `datetime('now')` returns
-   `2026-07-25 22:22:58`. Comparing them as raw strings compares `'T'` against
-   `' '`, and `'T'` sorts higher — so every document touched *today* reads as
-   active. The earlier version of this snippet omitted the wrapper and reported
-   12 active writers when the last write was 18 hours old (caught 2026-07-25).
-   Wrapping both sides normalises the format and makes the comparison real.
-   (run on the server with DB pointed at the prod file). If active, wait a few
-   minutes and re-check.
+   It prints `quiet — safe to restart` or `ACTIVE — wait` with the last write
+   time, and **exits 1 when active**, so it can gate the deploy directly:
+   `node scripts/activity-check.js && git pull --ff-only && …`. If active, wait
+   a few minutes and re-check.
+
+   **`datetime(updated_at)` is load-bearing** (why the script exists, and why it
+   wraps both sides). We store ISO-8601 (`2026-07-25T04:33:21.893Z`); SQLite's
+   `datetime('now')` returns `2026-07-25 22:22:58`. Comparing them as raw
+   strings compares `'T'` against `' '`, and `'T'` sorts higher — so every
+   document touched *today* reads as active. An earlier inline version of this
+   check omitted the wrapper and reported 12 active writers when the last write
+   was 18 hours old (caught 2026-07-25).
+
+   **Why a file and not a `node -e` one-liner** (both found 2026-08-02, after
+   three failed attempts to run the old snippet over SSH):
+   - The SQL contains single quotes — `datetime('now','-10 minutes')` — which
+     collide with the single quotes wrapping an `ssh host '…'` command. The
+     inner quotes close the outer string and SQLite gets `near "minutes":
+     syntax error`. Escaping through two shells is not worth re-deriving.
+   - Node resolves `better-sqlite3` relative to the **script's** directory, not
+     the cwd, so a copy dropped in `/tmp` fails `MODULE_NOT_FOUND` no matter
+     what you `cd` to first. Run it from inside the repo.
 2. **Backup before schema-touching deploys.** Any deploy whose diff touches
    `db.ts` migrations: run `sudo /usr/local/bin/scriptorium-backup` first and
    confirm the new snapshot exists. Routine UI deploys can rely on the nightly.
