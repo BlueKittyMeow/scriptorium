@@ -1591,6 +1591,33 @@
 
 	/* Mobile responsive */
 	@media (max-width: 768px) {
+		/* Document-level scrolling on mobile — see the note in Editor.svelte's
+		   mobile block for why (Chrome/Android runs a selection away to the
+		   ends of a nested scroll container). Both of these must give up
+		   overflow:hidden as well as the fixed height: an overflow:hidden
+		   ancestor makes itself the scrollport and would break the sticky
+		   header and footer inside the editor. */
+		.workspace {
+			height: auto;
+			min-height: 100dvh;
+		}
+
+		.editor-area,
+		.editor-wrapper {
+			overflow: visible;
+		}
+
+		/* The snapshot preview and diff views lose their nested scroller to the
+		   same change (their height is no longer constrained), which fixes the
+		   runaway selection there too. Their banner carries "Restore this
+		   version" / "Back to current", so it sticks rather than scrolling out
+		   of reach on a long snapshot — matching the editor header. */
+		.preview-banner {
+			position: sticky;
+			top: 0;
+			z-index: 20;
+		}
+
 		.sidebar {
 			position: fixed;
 			z-index: 50;

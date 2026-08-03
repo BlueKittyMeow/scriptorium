@@ -40,7 +40,6 @@
 	let titleInputEl = $state<HTMLInputElement | undefined>(undefined);
 
 	let element: HTMLDivElement;
-	let scrollContainer: HTMLDivElement;
 	let editor: Editor | null = $state(null);
 	let wordCount = $state(0);
 	let selectionWordCount = $state(0);
@@ -699,7 +698,7 @@
 		{/if}
 	</div>
 
-	<div class="editor-scroll" bind:this={scrollContainer}>
+	<div class="editor-scroll">
 		<div class="editor-content" bind:this={element}></div>
 	</div>
 
@@ -1067,6 +1066,42 @@
 	.save-status.unsaved { color: var(--unsaved); }
 
 	@media (max-width: 768px) {
+		/* The prose scrolls with the document here, not inside .editor-scroll.
+		   Chrome on Android ties selection-handle behaviour to the scrolling
+		   element: with the text inside a nested overflow-y:auto box, extending
+		   a selection past the edge of the screen ran it to the box's start or
+		   end instead of tracking your finger — select a paragraph, drag down,
+		   scroll back up, and everything to the top was selected. Reproduced in
+		   a plain-HTML harness with no ProseMirror and no CSS of ours (nested
+		   scroller alone was enough), and confirmed fixed by this shape.
+		   Desktop keeps the nested scroller, where the bug doesn't occur. */
+		.editor-container {
+			height: auto;
+			min-height: 100dvh;
+		}
+
+		.editor-scroll {
+			/* Still flex:1, so the footer sits at the bottom of the screen for a
+			   short document; the page simply grows past 100dvh for a long one. */
+			overflow-y: visible;
+		}
+
+		/* Keeps the title, mode toggle and save status where they were. Sticky
+		   rather than fixed: it survives Android's URL bar hiding and showing
+		   without the viewport-height maths that 100dvh needed. Below
+		   .binder-reopen (z-index 40) so ☰ stays tappable. */
+		.editor-header {
+			position: sticky;
+			top: 0;
+			z-index: 20;
+		}
+
+		.editor-footer {
+			position: sticky;
+			bottom: 0;
+			z-index: 20;
+		}
+
 		.title-row {
 			/* Left gutter clears the fixed mobile hamburger button (.binder-reopen
 			   in the workspace page: 0.5rem offset + 2.25rem square + gap) so the
