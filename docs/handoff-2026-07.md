@@ -54,3 +54,41 @@ Suite: **336 tests green; svelte-check 0 errors 0 warnings.** Deployed through `
 - Compile: docx/markdown verified by args-policy tests; epub title-page dedup wiring (assemble `includeTitlePage:false` for epub) is exported but **not yet wired** in the compile route — small follow-up.
 - 14 npm audit advisories (informational, unreviewed).
 - `test-data/` contains a real Scrivener 2 sample (Talamus) — useful fixture for import work.
+
+## Addendum — 2026-08-07: backup made copy-only (+ one open decision)
+
+**Shipped on `mvp` (pushed, NOT yet deployed to Factotum):** `27ae21a` + `ca9e415`.
+`scripts/backup.sh` is now **copy-only** — `rsync -a` (dropped `--delete`) for the
+local data mirror and `rclone copy` (not `rclone sync`) off-site — so an accidental
+*or intended* local deletion (the app hard-deletes files on purge) can never
+propagate to any backup tier. Daily + monthly DB snapshots are now atomic
+(`.tmp`→`mv`), and stale `.db.tmp` orphans are cleaned each run. Vetted by two
+adversarial Opus reviews (falsify + validate). Rationale, restore semantics, and
+caveats live in `docs/operations.md` "Backup layers" and `README.md` "Backups".
+
+**Deploy is still pending** (owner / next session — do NOT let an agent touch the
+Pi unprompted): `cd ~/apps/scriptorium && git pull --ff-only && sudo install -m 0755
+scripts/backup.sh /usr/local/bin/scriptorium-backup`, then verify with a manual
+`sudo /usr/local/bin/scriptorium-backup` (expect `rclone copy` in the log, a fresh
+`backups/db/` snapshot, and no `.tmp` left behind). Before flipping, check the
+current Drive `Scriptorium Backups/db/` size + quota, and decide whether to
+establish a clean remote baseline first (switching sync→copy freezes the remote at
+its last-synced set plus all future additions).
+
+**OPEN DECISION — scoped remote daily pruning.** Copy-only means the off-site `db/`
+folder grows forever (the 14-day prune is *local only*); it's the dominant off-site
+grower (low-single-digit GB/yr, sharing the family Drive quota). Options: hand-thin
+`db/` occasionally, or add an rclone age-prune scoped ONLY to `db/scriptorium-*.db`
+(which preserves the copy-only guarantee for `data-mirror/` and `monthly/`). Left as
+a deliberate human decision. A Courier reminder is armed on **Factotum** as a system
+timer (`/etc/systemd/system/scriptorium-prune-reminder.{service,timer}`, creds at
+`~/.config/claude-fling/telegram.env`) to fire **Tue 2026-08-11 14:00 EDT** and nudge
+a revisit with Fable; it self-disables after firing.
+
+**KNOWN LIMITATION — silent corruption.** Copy-only stops *deletion* propagation, not
+*in-place corruption*: a still-present but truncated/garbled file looks like a normal
+edit and overwrites the good backup copy on the next run. Only the monthly tarballs
+(sealed, never overwritten) defend against it, and only back to whichever sealed month
+still holds the pre-corruption version. True detection would need content checksums /
+an integrity manifest, or a checksumming filesystem (ZFS/btrfs; the Pi is ext4). Not
+built — noted for a future hardening pass.
