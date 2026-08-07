@@ -150,5 +150,11 @@ export const ROADMAP: RoadmapItem[] = [
 		key: 'wiki-style-links',
 		title: 'Wiki-style links between documents',
 		status: 'someday'
+	},
+	{
+		key: 'backup-integrity-check',
+		title: 'Backups that notice if a file goes bad',
+		note: 'Spot a file quietly corrupting — not just deleted — before the damage can spread; today only the monthly copy guards against that',
+		status: 'someday'
 	}
 ];

@@ -90,5 +90,11 @@ a revisit with Fable; it self-disables after firing.
 edit and overwrites the good backup copy on the next run. Only the monthly tarballs
 (sealed, never overwritten) defend against it, and only back to whichever sealed month
 still holds the pre-corruption version. True detection would need content checksums /
-an integrity manifest, or a checksumming filesystem (ZFS/btrfs; the Pi is ext4). Not
-built — noted for a future hardening pass.
+an integrity manifest, or a checksumming filesystem (ZFS/btrfs; the Pi is ext4).
+**Overhead is not the blocker:** the corpus is text/HTML (well under a GB) and the
+Pi 5's CPU has hardware-accelerated SHA-256, so hashing every file on each nightly
+run is a matter of seconds. The real cost is *policy*, not compute — you need a
+stored manifest plus logic to correlate a changed hash against whether the app
+actually recorded an edit (a snapshot / `updated_at` bump), so a legitimate save
+isn't misflagged as corruption. Tracked user-facing as `backup-integrity-check`
+(someday) in `src/lib/roadmap-data.ts`; not built.
