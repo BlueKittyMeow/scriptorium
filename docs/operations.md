@@ -35,8 +35,14 @@
      the cwd, so a copy dropped in `/tmp` fails `MODULE_NOT_FOUND` no matter
      what you `cd` to first. Run it from inside the repo.
 2. **Backup before schema-touching deploys.** Any deploy whose diff touches
-   `db.ts` migrations: run `sudo /usr/local/bin/scriptorium-backup` first and
-   confirm the new snapshot exists. Routine UI deploys can rely on the nightly.
+   `db.ts` migrations: run `sudo systemctl start scriptorium-backup.service`
+   first and confirm the new snapshot exists. Routine UI deploys can rely on
+   the nightly. **Never trigger a manual backup with bare `sudo
+   /usr/local/bin/scriptorium-backup`** — that runs as *root* and leaves
+   root-owned files in `backups/` (esp. `monthly/`) that the nightly service
+   (`User=bluekitty`) then can't overwrite, silently breaking it (see the
+   ownership gotcha under "Backup layers"). Always drive it through the unit
+   (runs as `bluekitty`), or `sudo -u bluekitty /usr/local/bin/scriptorium-backup`.
 3. **Standard sequence** (build fully completes before the restart):
    ```bash
    cd ~/apps/scriptorium && git pull --ff-only && npm ci && npm run build \
@@ -130,6 +136,21 @@ What copy-only does and does not protect, and how to restore:
   periodically, or later add a *scoped* off-site age-prune limited to
   `db/scriptorium-*.db` (which preserves the copy-only guarantee for
   `data-mirror/` and `monthly/`). Left as a human decision for now.
+
+**Ownership gotcha — root-owned files silently break the nightly (bit us
+2026-08, fixed 2026-08-07).** The service runs `User=bluekitty`, and every dir
+under `/mnt/media/scriptorium/backups/` must stay `bluekitty:bluekitty`. A
+manual `sudo /usr/local/bin/scriptorium-backup` (running as *root*) once created
+`backups/monthly/` and its files as `root:root`. It went unnoticed for weeks
+because the monthly step is `if [ ! -f ]` — July's file already existed, so the
+step was skipped and off-site still ran. On **Aug 1** the script tried to create
+a *new* `monthly/scriptorium-2026-08.db`, hit `Permission denied`, and `set -e`
+killed the run **before the off-site `rclone` step** — so off-site silently
+stopped for ~6 days while the local dailies kept succeeding. Fix was
+`sudo chown -R bluekitty:bluekitty /mnt/media/scriptorium/backups/monthly`.
+Lesson: never run the backup as root (see deploy rule 2); if a run ever fails,
+check `journalctl -u scriptorium-backup.service` — a non-zero exit means the
+off-site tier didn't run even though the daily DB copy did.
 
 ## Shared-host rules (Factotum hosts the house's DNS)
 

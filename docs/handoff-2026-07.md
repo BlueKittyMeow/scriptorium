@@ -57,7 +57,10 @@ Suite: **336 tests green; svelte-check 0 errors 0 warnings.** Deployed through `
 
 ## Addendum — 2026-08-07: backup made copy-only (+ one open decision)
 
-**Shipped on `mvp` (pushed, NOT yet deployed to Factotum):** `27ae21a` + `ca9e415`.
+**Shipped on `mvp` AND deployed to Factotum 2026-08-07** (`951f83c`; script
+installed to `/usr/local/bin/scriptorium-backup`, verified via a real
+`systemctl start scriptorium-backup.service` run — success, off-site copy
+completed).
 `scripts/backup.sh` is now **copy-only** — `rsync -a` (dropped `--delete`) for the
 local data mirror and `rclone copy` (not `rclone sync`) off-site — so an accidental
 *or intended* local deletion (the app hard-deletes files on purge) can never
