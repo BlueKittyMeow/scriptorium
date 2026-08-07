@@ -103,6 +103,34 @@ deliberate human decision, matching sibling repo Arkive's copy-everywhere rule.
 The 14-day prune is scoped strictly to the dated DB snapshots (`db/scriptorium-*.db`)
 and never touches mirrored content.
 
+What copy-only does and does not protect, and how to restore:
+
+- **Restore is `db/scriptorium-<date>.db` + the mirror, in that priority.** The
+  dated DB copy is authoritative about what "current" means; the mirror is a
+  *cumulative union of every content/snapshot file that ever existed on disk*,
+  not a point-in-time image. Orphaned files the restored DB no longer references
+  are simply ignored. Note the raw `scriptorium.db` (+`-wal`/`-shm`) also present
+  inside `data-mirror/` is a non-quiesced bystander copy — **never restore from
+  it; use the dated `db/` copy.**
+- **Purge no longer removes anything from backups.** The app hard-deletes files
+  on disk when a novel/document is permanently purged (empty-trash paths in
+  `tree-ops.ts` / the admin purge route); copy-only means those files persist in
+  the mirror and on Drive forever. That is the intended preservation trade — keep
+  it in mind if a multi-user privacy/erasure request ever needs true deletion
+  (that becomes a deliberate manual op, by design).
+- **Deletion is covered; in-place corruption is not.** "Never propagate" is about
+  *deletions*. If a source file is truncated/zeroed but still present (bad disk,
+  buggy write), `rsync -a` and `rclone copy` will still overwrite the good copy
+  with the bad one. Only the monthly tarball (a frozen point-in-time snapshot)
+  defends against silent corruption — another reason the monthly tier exists.
+- **Off-site `db/` now grows without bound** and is the dominant off-site grower:
+  the 14-day prune is local-only, so every daily DB copy accumulates on Drive
+  forever (a few–tens of MB each → low-single-digit GB/year, climbing with the
+  corpus, sharing the `uponmidnight-gdrive:` quota). Thin `db/` by hand
+  periodically, or later add a *scoped* off-site age-prune limited to
+  `db/scriptorium-*.db` (which preserves the copy-only guarantee for
+  `data-mirror/` and `monthly/`). Left as a human decision for now.
+
 ## Shared-host rules (Factotum hosts the house's DNS)
 
 Never restart or reconfigure pihole-FTL, cloudflared, jellyfin, or caddy for

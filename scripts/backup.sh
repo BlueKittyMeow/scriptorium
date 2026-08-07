@@ -65,8 +65,13 @@ mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/data-mirror"
 # --- (a) consistent DB snapshot via VACUUM INTO ----------------------------
 DB_COPY="$BACKUP_DIR/db/scriptorium-$(date +%F).db"
 DB_TMP="$DB_COPY.tmp"
-# VACUUM INTO refuses to write to an existing file, so clear any leftover tmp first.
-rm -f "$DB_TMP"
+# VACUUM INTO refuses to write to an existing file, so clear leftover tmps first.
+# Clear ALL stale db tmps, not just today's: a run that died between VACUUM and mv
+# on an earlier day leaves scriptorium-<olddate>.db.tmp, which the prune glob
+# (scriptorium-*.db) never matches and rclone copy never deletes -- so without this
+# it would accumulate un-prunable forever, locally and off-site. (-f: a no-match
+# glob expands to the literal, which -f then silently ignores.)
+rm -f "$BACKUP_DIR"/db/scriptorium-*.db.tmp
 log "VACUUM INTO $DB_TMP"
 sqlite3 "$DATA_ROOT/scriptorium.db" "VACUUM INTO '$DB_TMP'"
 # Atomic publish: the dated copy is replaced only after the new one is fully
@@ -99,7 +104,12 @@ MONTHLY_TAR="$BACKUP_DIR/monthly/data-$MONTH_TAG.tar.gz"
 mkdir -p "$BACKUP_DIR/monthly"
 if [ ! -f "$MONTHLY_DB" ]; then
 	log "monthly DB archive for $MONTH_TAG: $MONTHLY_DB"
-	cp "$DB_COPY" "$MONTHLY_DB"
+	# Atomic publish (same as the daily copy and the tarball below): a crash
+	# mid-cp must not leave a truncated monthly DB, which the [ ! -f ] guard
+	# would then preserve forever as this month's permanent archive.
+	rm -f "$MONTHLY_DB.tmp"
+	cp "$DB_COPY" "$MONTHLY_DB.tmp"
+	mv -f "$MONTHLY_DB.tmp" "$MONTHLY_DB"
 else
 	log "monthly DB archive for $MONTH_TAG already exists -- keeping it (first-of-month wins)"
 fi
