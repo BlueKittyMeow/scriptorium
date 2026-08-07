@@ -15,7 +15,10 @@
 # What it does:
 #   (a) VACUUM INTO a dated, consistent copy of the SQLite DB (safe under WAL while
 #       the app is running -- it takes its own read transaction and writes a clean file).
-#   (b) rsync -a --delete a full mirror of DATA_ROOT (content + snapshot files).
+#       Written to a .tmp then atomically mv'd into place (a same-day re-run only
+#       replaces the dated copy once the new one is fully written).
+#   (b) rsync -a (NO --delete) a full mirror of DATA_ROOT (content + snapshot files).
+#       Deliberately NOT a deleting mirror -- see the rationale at the rsync call.
 #   (c) prune dated DB copies older than 14 days.
 #   (c2) monthly tier, NEVER pruned: on the first run in each calendar month,
 #        archive that day's DB copy to monthly/scriptorium-YYYY-MM.db and a
@@ -25,11 +28,12 @@
 #        month-anchored copy per month persists forever (~40-80 MB/month
 #        compressed at current corpus size — decades of headroom on both the
 #        NVMe and the Drive remote).
-#   (d) optional off-site rclone sync of the whole BACKUP_DIR (includes monthly/).
+#   (d) optional off-site rclone COPY of the whole BACKUP_DIR (includes monthly/).
+#       copy, not sync: a local deletion can never propagate off-site -- see (d) below.
 #
-# Safe to re-run same-day: the dated DB copy is OVERWRITTEN (VACUUM INTO refuses to
-# write to an existing file, so we remove it first). Chosen over skip-if-exists so a
-# re-run always captures the latest state.
+# Safe to re-run same-day: the dated DB copy is OVERWRITTEN (VACUUM INTO writes a
+# fresh .tmp, which then atomically replaces the dated copy). Chosen over
+# skip-if-exists so a re-run always captures the latest state.
 
 set -euo pipefail
 
@@ -60,18 +64,26 @@ mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/data-mirror"
 
 # --- (a) consistent DB snapshot via VACUUM INTO ----------------------------
 DB_COPY="$BACKUP_DIR/db/scriptorium-$(date +%F).db"
-if [ -f "$DB_COPY" ]; then
-	log "removing existing same-day DB copy (will overwrite): $DB_COPY"
-	rm -f "$DB_COPY"
-fi
-log "VACUUM INTO $DB_COPY"
-sqlite3 "$DATA_ROOT/scriptorium.db" "VACUUM INTO '$DB_COPY'"
+DB_TMP="$DB_COPY.tmp"
+# VACUUM INTO refuses to write to an existing file, so clear any leftover tmp first.
+rm -f "$DB_TMP"
+log "VACUUM INTO $DB_TMP"
+sqlite3 "$DATA_ROOT/scriptorium.db" "VACUUM INTO '$DB_TMP'"
+# Atomic publish: the dated copy is replaced only after the new one is fully
+# written, so a crash mid-VACUUM can never leave a truncated same-day copy.
+mv -f "$DB_TMP" "$DB_COPY"
 DB_BYTES=$(stat -c %s "$DB_COPY")
 log "DB copy written: $DB_BYTES bytes"
 
 # --- (b) full data mirror (content + snapshots) ----------------------------
 log "rsync mirror of DATA_ROOT -> $BACKUP_DIR/data-mirror/"
-rsync -a --delete "$DATA_ROOT/" "$BACKUP_DIR/data-mirror/"
+# NO --delete: this is a preservation-first mirror. If a content or snapshot file
+# is removed at the source (accident, bug, bad script), we must NOT let the next
+# run erase it from the mirror too. The mirror may therefore accumulate stale
+# files -- that is the correct trade for a writing app, where losing text is
+# unrecoverable but a little extra disk is free. Off-site copy (d) is likewise
+# non-deleting, so a local deletion never propagates anywhere.
+rsync -a "$DATA_ROOT/" "$BACKUP_DIR/data-mirror/"
 log "mirror complete"
 
 # --- (c) prune dated DB copies older than 14 days --------------------------
@@ -106,9 +118,15 @@ fi
 # --- (d) optional off-site sync --------------------------------------------
 if [ -n "$RCLONE_REMOTE" ]; then
 	if command -v rclone >/dev/null 2>&1; then
-		log "rclone sync $BACKUP_DIR -> $RCLONE_REMOTE"
-		rclone sync "$BACKUP_DIR" "$RCLONE_REMOTE" --transfers 4
-		log "off-site sync complete"
+		# copy, NOT sync: `rclone sync` mirrors local deletions to the remote,
+		# which would defeat the point of an off-site backup. `rclone copy` only
+		# ever adds/updates files, so an accidental (or malicious) local deletion
+		# can never propagate to Drive. Trade: the remote accumulates whatever the
+		# local mirror does; pruned dailies (c) linger off-site until thinned by
+		# hand -- acceptable for a preservation-first app. (2026-08-07)
+		log "rclone copy $BACKUP_DIR -> $RCLONE_REMOTE"
+		rclone copy "$BACKUP_DIR" "$RCLONE_REMOTE" --transfers 4
+		log "off-site copy complete"
 	else
 		log "WARNING: RCLONE_REMOTE set but rclone not installed -- skipping off-site sync"
 	fi

@@ -79,7 +79,8 @@
 
 1. Live: SQLite WAL on the Pi's NVMe + per-document snapshot files.
 2. Nightly 04:00 (`scriptorium-backup.timer`, enabled): VACUUM'd db snapshot
-   per day + full data-mirror to `/mnt/media/scriptorium/backups`, 14-day prune.
+   per day (written to a `.tmp` then atomically renamed) + full data-mirror to
+   `/mnt/media/scriptorium/backups`, 14-day prune of the *dailies only*.
 3. Off-site: rclone to Google Drive `Scriptorium Backups/` (db/ + data-mirror/
    + monthly/) — the mirror carries every document's HTML and every snapshot
    file, not just the database.
@@ -87,7 +88,20 @@
    month archives that day's DB snapshot + a tarball of the full data mirror
    to `monthly/` — never auto-pruned, locally or off-site. Thinning old months
    (e.g. to one per year, years from now) is deliberately a human decision.
-4. A restore drill was performed and passed pre-launch (2026-07-09).
+5. A restore drill was performed and passed pre-launch (2026-07-09).
+
+**Deletions never propagate (changed 2026-08-07).** Both the local mirror and
+the off-site step are **copy-only, not mirror**: the rsync data-mirror runs
+without `--delete`, and the off-site step is `rclone copy`, not `rclone sync`.
+Reason: for a preservation-first writing app, an accidental local deletion (bad
+script, bug, fat-fingered `rm`) must never be replayed onto the backups. The
+old deleting-mirror setup meant a local delete nobody noticed for a day would
+be gone from every tier except the monthly tarball — up to a month of writing
+at risk. The trade is that the mirror and the remote accumulate stale files
+(including pruned dailies, which now linger off-site); thinning them is a
+deliberate human decision, matching sibling repo Arkive's copy-everywhere rule.
+The 14-day prune is scoped strictly to the dated DB snapshots (`db/scriptorium-*.db`)
+and never touches mirrored content.
 
 ## Shared-host rules (Factotum hosts the house's DNS)
 
