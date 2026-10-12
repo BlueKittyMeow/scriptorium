@@ -109,7 +109,7 @@ describe('Editor: find keyboard handling', () => {
 		expect(handler).toMatch(/e\.ctrlKey \|\| e\.metaKey/);
 		expect(handler).toMatch(/e\.key === 'f'/);
 		expect(handler).toContain('e.preventDefault()');
-		expect(EDITOR).toMatch(/<svelte:window onkeydown={handleWindowKeydown} \/>/);
+		expect(EDITOR).toMatch(/<svelte:window onkeydown={handleWindowKeydown}[^>]*\/>/);
 	});
 
 	it('leaves Ctrl+K (the workspace cross-document search) alone', () => {

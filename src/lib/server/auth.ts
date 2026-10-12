@@ -96,17 +96,31 @@ export function extendSession(
 	db: Database.Database,
 	tokenHash: string,
 	currentExpiry: Date
-): void {
+): string {
 	const remainingMs = currentExpiry.getTime() - Date.now();
 	const thresholdMs = SESSION_EXTEND_THRESHOLD * 1000;
 
 	if (remainingMs > thresholdMs) {
 		// More than 7 days left — don't extend
-		return;
+		return currentExpiry.toISOString();
 	}
 
 	const newExpiry = new Date(Date.now() + SESSION_MAX_AGE * 1000).toISOString();
 	db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(newExpiry, tokenHash);
+	return newExpiry;
+}
+
+/** Keep browser expiry aligned with the database, including already-renewed sessions. */
+export function sessionCookieOptions(url: URL, expiresAt: string) {
+	const expires = new Date(expiresAt);
+	return {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax' as const,
+		secure: !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname),
+		expires,
+		maxAge: Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000))
+	};
 }
 
 export function destroySession(db: Database.Database, tokenHash: string): void {

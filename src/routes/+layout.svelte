@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
+	import RequestNotice from '$lib/components/RequestNotice.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
@@ -13,7 +15,8 @@
 	const isWorkspace = $derived(/^\/novels\/(?!compare$)[^/]+$/.test($page.url.pathname));
 
 	async function logout() {
-		await fetch('/api/auth/logout', { method: 'POST' });
+		const response = await apiFetch('/api/auth/logout', { method: 'POST' });
+		if (!response.ok) return;
 		window.location.href = '/login';
 	}
 
@@ -78,6 +81,8 @@
 		</button>
 	</div>
 {/if}
+
+<RequestNotice />
 
 <div class="app">
 	{@render children()}

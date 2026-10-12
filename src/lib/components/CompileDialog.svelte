@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import type { TreeNode, CompileFormat } from '$lib/types.js';
 
 	type CompileEntry =
@@ -73,7 +74,7 @@
 		const newValue = currentValue ? 0 : 1;
 		pendingToggles++;
 		try {
-			const res = await fetch(`/api/novels/${novelId}/tree/nodes/${docId}`, {
+			const res = await apiFetch(`/api/novels/${novelId}/tree/nodes/${docId}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ compile_include: newValue })
@@ -104,7 +105,7 @@
 		compiling = true;
 		errorMsg = null;
 		try {
-			const res = await fetch(`/api/novels/${novelId}/compile`, {
+			const res = await apiFetch(`/api/novels/${novelId}/compile`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ format })

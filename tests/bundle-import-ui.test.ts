@@ -24,7 +24,7 @@ describe('bundle import: path input beside the .scriv flow', () => {
 	});
 
 	it('posts to /api/import/bundle', () => {
-		expect(SOURCE).toContain("fetch('/api/import/bundle'");
+		expect(SOURCE).toContain("apiFetch('/api/import/bundle'");
 	});
 });
 

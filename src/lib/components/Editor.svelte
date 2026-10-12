@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { beforeNavigate } from '$app/navigation';
+	import { SaveQueue } from '$lib/save-queue.js';
+	import { showNotice } from '$lib/api.js';
 	import { Editor, Extension } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
 	import Placeholder from '@tiptap/extension-placeholder';
@@ -28,8 +31,8 @@
 		searchTerm?: string | null;
 		onSearchHighlightDone?: () => void;
 		onSnapshotsToggle?: () => void;
-		onManualSnapshot?: () => Promise<void>;
-		registerFlush?: (flush: () => Promise<void>) => void;
+		onManualSnapshot?: () => Promise<boolean>;
+		registerFlush?: (flush: () => Promise<boolean>) => void;
 		contentVersion?: number;
 		onrename?: (title: string) => void;
 	} = $props();
@@ -44,6 +47,7 @@
 	let wordCount = $state(0);
 	let selectionWordCount = $state(0);
 	let saveStatus: 'saved' | 'saving' | 'unsaved' = $state('saved');
+	let saveFailed = $state(false);
 	let saveTimeout: any = null;
 	let currentDocId = $state('');
 	let spellcheck = $state(
@@ -293,40 +297,60 @@
 		}
 	}
 
+	const saves = new SaveQueue(
+		() => ({ content: editor?.getHTML() || '', docId: currentDocId }),
+		(content, target) => onsave(content, target),
+		(status) => { saveStatus = status; }
+	);
+
 	async function triggerSave() {
-		if (!editor || !onsave) return;
-		// Capture the target doc id BEFORE any await — the content in the editor
-		// belongs to currentDocId, which may change if the user switches docs mid-save.
-		const target = currentDocId;
-		saveStatus = 'saving';
-		try {
-			await onsave(editor.getHTML(), target);
-			saveStatus = 'saved';
-		} catch {
-			saveStatus = 'unsaved';
-		}
+		if (!editor) return true;
+		const saved = await saves.flush();
+		saveFailed = !saved;
+		return saved;
 	}
 
 	function scheduleSave() {
-		saveStatus = 'unsaved';
+		saves.markDirty();
 		clearTimeout(saveTimeout);
 		saveTimeout = setTimeout(triggerSave, 2000);
 	}
 
-	/** Flush any pending save immediately. Returns when save completes. */
-	async function flushSave() {
+	/** False means keep this document and its unsaved text on screen. */
+	async function flushSave(): Promise<boolean> {
 		clearTimeout(saveTimeout);
-		if (saveStatus === 'unsaved' && editor) {
-			await triggerSave();
+		return triggerSave();
+	}
+
+	beforeNavigate((navigation) => {
+		if (saveStatus !== 'saved') {
+			navigation.cancel();
+			saveFailed = true;
+			showNotice('Your latest writing has not been confirmed saved. Keep this chapter open, use Retry save, or download a copy before leaving.');
 		}
+	});
+
+	function protectUnsaved(event: BeforeUnloadEvent) {
+		if (saveStatus !== 'saved') { event.preventDefault(); event.returnValue = ''; }
+	}
+
+	function downloadDraft() {
+		if (!editor) return;
+		const blob = new Blob(['<!doctype html><meta charset="utf-8">', editor.getHTML()], { type: 'text/html;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `${(title || 'chapter').replace(/[^a-zA-Z0-9_-]/g, '_')}-unsaved.html`;
+		link.click();
+		setTimeout(() => URL.revokeObjectURL(url), 1000);
 	}
 
 	let snapshotFlash = $state(false);
 
 	async function handleManualSnapshot() {
 		if (!onManualSnapshot) return;
-		await flushSave();
-		await onManualSnapshot();
+		if (!(await flushSave())) return;
+		if (!(await onManualSnapshot())) return;
 		snapshotFlash = true;
 		setTimeout(() => { snapshotFlash = false; }, 2000);
 	}
@@ -385,7 +409,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ content: editor.getHTML() }),
 				keepalive: true
-			});
+			}).catch(() => { /* Best effort only; navigation guards retain unsaved work. */ });
 		}
 		editor?.destroy();
 	});
@@ -403,17 +427,11 @@
 	async function switchDocument(newDocId: string) {
 		// Always cancel any pending debounced save so it can't fire against the new doc.
 		clearTimeout(saveTimeout);
-		if (currentDocId && saveStatus === 'unsaved' && editor) {
-			// Capture the outgoing doc id BEFORE the await — the editor still holds its content.
-			const target = currentDocId;
-			try {
-				await onsave(editor.getHTML(), target);
-			} catch { /* best effort */ }
-		}
+		if (currentDocId && saveStatus !== 'saved' && !(await flushSave())) return;
 		if (!editor) return;
-		editor.commands.setContent(initialContent);
+		editor.commands.setContent(initialContent, { emitUpdate: false });
 		currentDocId = newDocId;
-		saveStatus = 'saved';
+		saves.reset();
 		updateWordCount();
 	}
 
@@ -424,8 +442,8 @@
 		if (v > trackedVersion && editor) {
 			trackedVersion = v;
 			clearTimeout(saveTimeout);
-			editor.commands.setContent(initialContent);
-			saveStatus = 'saved';
+			editor.commands.setContent(initialContent, { emitUpdate: false });
+			saves.reset();
 			updateWordCount();
 		}
 	});
@@ -519,7 +537,7 @@
 		if (next === mode) return;
 		// Leaving edit mode: flush whatever the debounce hasn't written yet, so
 		// no keystrokes are lost on the way out.
-		if (mode === 'edit') await flushSave();
+		if (mode === 'edit' && !(await flushSave())) return;
 		mode = next;
 		try { localStorage.setItem('scriptorium-editor-mode', mode); } catch { /* quota exceeded */ }
 		// emitUpdate=false: TipTap's setEditable emits an update by default, which
@@ -613,7 +631,7 @@
 	function redo() { editor?.chain().focus().redo().run(); }
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} onbeforeunload={protectUnsaved} />
 
 <div class="editor-container">
 	<div class="editor-header">
@@ -702,6 +720,14 @@
 		<div class="editor-content" bind:this={element}></div>
 	</div>
 
+	{#if saveFailed && saveStatus !== 'saved'}
+		<div class="save-recovery" role="status">
+			<span>Your latest changes are not yet confirmed saved. Keep this tab open.</span>
+			<button onclick={flushSave} disabled={saveStatus === 'saving'}>Retry save</button>
+			<button onclick={downloadDraft}>Download a copy</button>
+		</div>
+	{/if}
+
 	<div class="editor-footer">
 		<span class="word-count">{#if selectionWordCount > 0}{selectionWordCount.toLocaleString()} / {/if}{wordCount.toLocaleString()} words</span>
 		<span class="footer-right">
@@ -726,6 +752,9 @@
 </div>
 
 <style>
+	.save-recovery { padding: .5rem 1rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; background: var(--warning-bg); color: var(--warning-text); font-size: .85rem; }
+	.save-recovery button { font: inherit; padding: .3rem .5rem; cursor: pointer; }
+
 	.editor-container {
 		display: flex;
 		flex-direction: column;

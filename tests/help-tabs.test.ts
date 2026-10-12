@@ -151,9 +151,9 @@ describe('help tabs: requests & questions', () => {
 });
 
 describe('help tabs: fetch usage is scoped to the DB-backed tab, not the static guide', () => {
-	it('fetch( only targets /api/feedback or /api/roadmap/hearts', () => {
+	it('apiFetch( only targets /api/feedback or /api/roadmap/hearts', () => {
 		const src = source();
-		const fetchCalls = [...src.matchAll(/fetch\((['"`])([^'"`]*)\1/g)].map((m) => m[2]);
+		const fetchCalls = [...src.matchAll(/apiFetch\((['"`])([^'"`]*)\1/g)].map((m) => m[2]);
 		expect(fetchCalls.length).toBeGreaterThan(0);
 		for (const url of fetchCalls) {
 			expect(url.startsWith('/api/feedback') || url.startsWith('/api/roadmap/hearts')).toBe(true);

@@ -156,3 +156,49 @@ off-site tier didn't run even though the daily DB copy did.
 
 Never restart or reconfigure pihole-FTL, cloudflared, jellyfin, or caddy for
 any Scriptorium purpose. `scriptorium.service` is ours; nothing else is.
+
+## Maintenance review — 2026-10-12
+
+The closing August 7 session left two backup items open. The copy-only deployment
+and ownership repair were completed then; the handoff's contradictory pending
+deployment paragraph has been corrected.
+
+- **Remote daily retention:** still a policy decision. Read-only inspection found
+  88 daily database copies, about 2.92 GiB, with ample space in the off-site account.
+  There is no immediate storage reason to delete copies. Retention
+  is unchanged; any future pruning must be explicitly scoped to dated daily DBs,
+  preserving `data-mirror/` and `monthly/`.
+- **Backup integrity detection:** still a future feature. A checksum manifest
+  needs an edit-aware policy so normal writing is not mistaken for corruption.
+  Copy-only backups plus permanent monthly archives remain the current design.
+- **Current health:** installed backup script matches the repository; the October
+  12 nightly service completed successfully. Local daily DBs use about 515 MiB,
+  monthly archives 264 MiB, and the cumulative content mirror 96 MiB.
+
+The broader fleet-monitoring proposal in the operator's August 25 notes includes
+backup failure notifications, disk-space alerts, update checks, and service
+hardening. Those shared-host changes are separate from this Scriptorium patch.
+
+## Error recovery
+
+Client API requests announce network, authentication, permission, missing-item,
+validation, oversized-request, rate-limit, and server/storage failures. They never
+automatically repeat a mutation or redirect a writer away from unsaved text.
+The chapter list and active editor are only replaced after successful reads;
+missing text files for documents with recorded words produce an error, not a
+blank editable chapter. Storage exceptions expose safe messages, not paths or SQL.
+
+Editor saves are serialized. A failed flush blocks chapter changes and snapshot
+operations; edits made during an in-flight save cannot be marked saved by the
+older response. Retry save and Download a copy remain available, and navigation
+warns/blocks while changes are unconfirmed. This preserves text in the current
+tab; persistent browser draft recovery is still a separate roadmap item.
+
+Validation: `npm test` covers session-cookie renewal, request failure messages,
+missing content, and save ordering. `npm run test:browser` launches its own local
+server on port 5189 with a temporary database and invented writing. It verifies
+expired authentication, failed reads/saves, retry, download, navigation guards,
+and mobile error controls. It never uses the production database. Set
+`BROWSER_EXECUTABLE` to an installed Chromium/Chrome binary (default
+`/usr/bin/google-chrome`). Screenshots and results are written to a temporary
+directory reported by the runner.

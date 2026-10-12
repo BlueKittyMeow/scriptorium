@@ -48,11 +48,18 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	// Check Pandoc availability
 	const pandocOk = await checkPandocAvailable();
 	if (!pandocOk) {
-		throw error(500, 'Pandoc is not installed or not available on the system PATH');
+		throw error(503, { code: 'EXPORT_UNAVAILABLE', message: 'Export support is unavailable on the server. Your writing is unchanged; ask your archivist to check the export tools.' });
 	}
 
 	// Convert
-	const result = await convertHtmlToFormat(html, format, metadata);
+	let result;
+	try {
+		result = await convertHtmlToFormat(html, format, metadata);
+	} catch {
+		throw error(503, { code: 'EXPORT_UNAVAILABLE', message: format === 'pdf'
+			? 'PDF export failed. Try Word or Markdown, or ask your archivist to check PDF support on the server.'
+			: 'Export failed. Your writing is unchanged. Try another format or ask your archivist to check the export tools.' });
+	}
 	const config = FORMAT_CONFIG[format];
 
 	// Sanitize filename

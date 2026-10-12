@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
@@ -47,7 +48,7 @@
 	let diffLoading = $state(false);
 	let diffError: string | null = $state(null);
 	let showRestoreConfirm: string | null = $state(null);
-	let editorFlush: (() => Promise<void>) | null = $state(null);
+	let editorFlush: (() => Promise<boolean>) | null = $state(null);
 	let editorContentVersion = $state(0);
 
 	// Compile dialog state
@@ -80,19 +81,20 @@
 		await loadTree();
 	});
 
+	let treeLoading = $state(false);
+	let treeError = $state('');
+	let documentError = $state<{ id: string; message: string } | null>(null);
+	let selectionRequest = 0;
+
 	async function loadTree() {
-		const res = await fetch(`/api/novels/${novelId}/tree`);
-		tree = await res.json();
-		// Auto-expand all folders
-		function collectFolderIds(nodes: TreeNode[]) {
-			for (const n of nodes) {
-				if (n.type === 'folder') {
-					expandedFolders.add(n.id);
-					collectFolderIds(n.children);
-				}
-			}
-		}
-		expandedFolderIds(tree);
+		treeLoading = true;
+		try {
+			const res = await apiFetch(`/api/novels/${novelId}/tree`);
+			if (!res.ok) { treeError = (await res.json()).message; return; }
+			tree = await res.json();
+			treeError = '';
+			expandedFolderIds(tree);
+		} finally { treeLoading = false; }
 	}
 
 	function expandedFolderIds(nodes: TreeNode[]) {
@@ -110,24 +112,32 @@
 	}
 
 	async function selectDocument(docId: string) {
+		const request = ++selectionRequest;
+		const res = await apiFetch(`/api/documents/${docId}`);
+		if (request !== selectionRequest) return;
+		if (!res.ok) { documentError = { id: docId, message: (await res.json()).message }; return; }
+		const document = await res.json();
+		// Flush AFTER loading, so edits made during a slow request are included.
+		if (editorFlush && !(await editorFlush())) return;
+		if (request !== selectionRequest) return;
+		activeDoc = document;
 		activeDocId = docId;
-		// On mobile, the sidebar is a full-screen overlay — close it so the editor is visible.
-		if (typeof window !== 'undefined' && window.innerWidth <= 768) {
-			sidebarOpen = false;
-		}
-		const res = await fetch(`/api/documents/${docId}`);
-		activeDoc = await res.json();
+		documentError = null;
+		previewingSnapshot = null;
+		dismissDiff();
+		// Keep the mobile binder visible until loading and saving both succeed.
+		if (typeof window !== 'undefined' && window.innerWidth <= 768) sidebarOpen = false;
 	}
 
 	async function saveDocument(content: string, docId: string) {
 		if (!docId) return;
-		const res = await fetch(`/api/documents/${docId}`, {
+		const res = await apiFetch(`/api/documents/${docId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ content })
 		});
 		// Surface HTTP failures so the Editor's catch flips status back to 'unsaved'.
-		if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+		if (!res.ok) throw new Error((await res.json()).message);
 		const updated = await res.json();
 		// Update word count in tree for the doc the content belongs to, not activeDocId.
 		updateTreeNodeWordCount(tree, docId, updated.word_count);
@@ -137,12 +147,10 @@
 	// ─── Snapshot functions ─────────────────────────────────────────────
 
 	async function loadSnapshots(docId: string, reset = true) {
-		if (reset) {
-			snapshotOffset = 0;
-			snapshots = [];
-		}
+		const offset = reset ? 0 : snapshotOffset;
 		const limit = 50;
-		const res = await fetch(`/api/documents/${docId}/snapshots?limit=${limit}&offset=${snapshotOffset}`);
+		const res = await apiFetch(`/api/documents/${docId}/snapshots?limit=${limit}&offset=${offset}`);
+		if (!res.ok) return;
 		const batch: SnapshotSummary[] = await res.json();
 		if (reset) {
 			snapshots = batch;
@@ -150,7 +158,7 @@
 			snapshots = [...snapshots, ...batch];
 		}
 		hasMoreSnapshots = batch.length >= limit;
-		snapshotOffset += batch.length;
+		snapshotOffset = offset + batch.length;
 	}
 
 	async function loadMoreSnapshots() {
@@ -172,8 +180,8 @@
 	async function previewSnapshot(snapId: string) {
 		if (!activeDocId) return;
 		// Flush pending editor save before entering preview
-		if (editorFlush) await editorFlush();
-		const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}`);
+		if (editorFlush && !(await editorFlush())) return;
+		const res = await apiFetch(`/api/documents/${activeDocId}/snapshots/${snapId}`);
 		if (!res.ok) return;
 		const snapData = await res.json();
 		dismissDiff();
@@ -190,13 +198,13 @@
 	async function compareSnapshot(snapId: string) {
 		if (!activeDocId) return;
 		// Flush pending editor save so the diff reflects what's on screen
-		if (editorFlush) await editorFlush();
+		if (editorFlush && !(await editorFlush())) return;
 		previewingSnapshot = null;
 		snapshotDiff = null;
 		diffError = null;
 		diffLoading = true;
 		try {
-			const res = await fetch(`/api/documents/${activeDocId}/snapshots/${snapId}/diff`);
+			const res = await apiFetch(`/api/documents/${activeDocId}/snapshots/${snapId}/diff`);
 			if (!res.ok) {
 				diffError = `Could not load comparison (${res.status})`;
 				return;
@@ -222,15 +230,17 @@
 
 	async function confirmRestore() {
 		if (!showRestoreConfirm || !activeDocId) return;
+		if (editorFlush && !(await editorFlush())) return;
 		const snapId = showRestoreConfirm;
 		showRestoreConfirm = null;
 
-		const res = await fetch(`/api/documents/${activeDocId}/restore/${snapId}`, { method: 'POST' });
+		const res = await apiFetch(`/api/documents/${activeDocId}/restore/${snapId}`, { method: 'POST' });
 		if (!res.ok) return;
 		const result = await res.json();
 
 		// Reload document with restored content
-		const docRes = await fetch(`/api/documents/${activeDocId}`);
+		const docRes = await apiFetch(`/api/documents/${activeDocId}`);
+		if (!docRes.ok) return;
 		activeDoc = await docRes.json();
 
 		// Bump contentVersion to tell Editor to reload without save-then-switch
@@ -246,17 +256,18 @@
 		await loadSnapshots(activeDocId);
 	}
 
-	async function handleManualSnapshot() {
-		if (!activeDocId) return;
-		const res = await fetch(`/api/documents/${activeDocId}/snapshots`, { method: 'POST' });
-		if (!res.ok) return;
+	async function handleManualSnapshot(): Promise<boolean> {
+		if (!activeDocId) return false;
+		const res = await apiFetch(`/api/documents/${activeDocId}/snapshots`, { method: 'POST' });
+		if (!res.ok) return false;
 		// Refresh snapshot list if panel is open
 		if (showSnapshots) {
 			await loadSnapshots(activeDocId);
 		}
+		return true;
 	}
 
-	function registerEditorFlush(flush: () => Promise<void>) {
+	function registerEditorFlush(flush: () => Promise<boolean>) {
 		editorFlush = flush;
 	}
 
@@ -298,7 +309,7 @@
 
 	async function createItem() {
 		if (!newItemTitle.trim()) return;
-		await fetch(`/api/novels/${novelId}/tree/nodes`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree/nodes`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -308,6 +319,7 @@
 				sort_order: getNextSortOrder(newItemParent)
 			})
 		});
+		if (!response.ok) return;
 		showNewModal = false;
 		newItemTitle = '';
 		await loadTree();
@@ -329,12 +341,15 @@
 	}
 
 	async function trashItem(nodeId: string, nodeType: string) {
-		await fetch(`/api/novels/${novelId}/tree/nodes/${nodeId}?type=${nodeType}`, {
+		if (editorFlush && !(await editorFlush())) return;
+		const response = await apiFetch(`/api/novels/${novelId}/tree/nodes/${nodeId}?type=${nodeType}`, {
 			method: 'DELETE'
 		});
+		if (!response.ok) return;
 		if (activeDocId === nodeId) {
 			activeDocId = null;
 			activeDoc = null;
+			editorFlush = null;
 		}
 		await loadTree();
 	}
@@ -342,11 +357,12 @@
 	async function restoreItem(nodeId: string, nodeType: string) {
 		const table = nodeType === 'folder' ? 'folders' : 'documents';
 		// Use PATCH to restore (clear deleted_at)
-		await fetch(`/api/novels/${novelId}/tree/nodes/${nodeId}?type=${nodeType}`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree/nodes/${nodeId}?type=${nodeType}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ type: nodeType, restore: true })
 		});
+		if (!response.ok) return;
 		await loadTree();
 	}
 
@@ -362,7 +378,8 @@
 			searchResults = [];
 			return;
 		}
-		const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&novel=${novelId}`);
+		const res = await apiFetch(`/api/search?q=${encodeURIComponent(searchQuery)}&novel=${novelId}`);
+		if (!res.ok) return;
 		searchResults = await res.json();
 	}
 
@@ -388,11 +405,12 @@
 			editingNovelTitle = false;
 			return;
 		}
-		await fetch(`/api/novels/${novelId}`, {
+		const response = await apiFetch(`/api/novels/${novelId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ title: trimmed })
 		});
+		if (!response.ok) return;
 		data.novel.title = trimmed;
 		editingNovelTitle = false;
 	}
@@ -408,11 +426,12 @@
 			renamingNodeId = null;
 			return;
 		}
-		await fetch(`/api/novels/${novelId}/tree/nodes/${node.id}`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree/nodes/${node.id}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ title: trimmed, type: node.type })
 		});
+		if (!response.ok) return;
 		node.title = trimmed;
 		if (node.id === activeDocId && activeDoc) {
 			activeDoc.title = trimmed;
@@ -530,7 +549,7 @@
 		draggedNode = null;
 		dropTarget = null;
 
-		await fetch(`/api/novels/${novelId}/tree`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -540,6 +559,7 @@
 				new_sort_order: newSortOrder
 			})
 		});
+		if (!response.ok) return;
 
 		await loadTree();
 	}
@@ -552,7 +572,7 @@
 		const move = computeSwapMove(tree, node.id, direction);
 		if (!move) return;
 
-		await fetch(`/api/novels/${novelId}/tree`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -562,6 +582,7 @@
 				new_sort_order: move.sortOrder
 			})
 		});
+		if (!response.ok) return;
 
 		await loadTree();
 	}
@@ -582,7 +603,7 @@
 		const newSortOrder = computeAppendSortOrder(tree, newParentId, node.id);
 		closeMoveModal();
 
-		await fetch(`/api/novels/${novelId}/tree`, {
+		const response = await apiFetch(`/api/novels/${novelId}/tree`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -592,6 +613,7 @@
 				new_sort_order: newSortOrder
 			})
 		});
+		if (!response.ok) return;
 
 		await loadTree();
 	}
@@ -673,6 +695,12 @@
 					</div>
 				{/if}
 
+				{#if treeError}
+					<div class="load-error" role="alert"><p>{treeError}</p><button onclick={loadTree} disabled={treeLoading}>Retry loading chapters</button></div>
+				{:else if treeLoading && tree.length === 0}
+					<p class="load-error" role="status">Loading chapters…</p>
+				{/if}
+
 				<!-- Binder tree -->
 				<nav class="binder-tree" ondragleave={(e) => {
 					if (!e.relatedTarget || !(e.currentTarget as HTMLElement).contains(e.relatedTarget as HTMLElement)) {
@@ -718,6 +746,10 @@
 		<!-- Mobile-only binder reopen — the in-sidebar toggle slides off-screen when collapsed -->
 		{#if !sidebarOpen}
 			<button class="binder-reopen" onclick={() => sidebarOpen = true} aria-label="Open binder" title="Open binder">☰</button>
+		{/if}
+
+		{#if documentError}
+			<div class="load-error" role="alert"><p>{documentError.message}</p><button onclick={() => documentError && selectDocument(documentError.id)}>Retry loading chapter</button></div>
 		{/if}
 
 		{#if activeDoc}
@@ -990,6 +1022,8 @@
 {/snippet}
 
 <style>
+	.load-error { padding: .75rem; color: var(--error-text); background: var(--error-bg); font-size: .85rem; }
+	.load-error button { font: inherit; padding: .4rem; cursor: pointer; }
 	.workspace {
 		display: flex;
 		height: 100vh;

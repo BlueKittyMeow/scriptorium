@@ -69,14 +69,12 @@ propagate to any backup tier. Daily + monthly DB snapshots are now atomic
 adversarial Opus reviews (falsify + validate). Rationale, restore semantics, and
 caveats live in `docs/operations.md` "Backup layers" and `README.md` "Backups".
 
-**Deploy is still pending** (owner / next session — do NOT let an agent touch the
-Pi unprompted): `cd ~/apps/scriptorium && git pull --ff-only && sudo install -m 0755
-scripts/backup.sh /usr/local/bin/scriptorium-backup`, then verify with a manual
-`sudo /usr/local/bin/scriptorium-backup` (expect `rclone copy` in the log, a fresh
-`backups/db/` snapshot, and no `.tmp` left behind). Before flipping, check the
-current Drive `Scriptorium Backups/db/` size + quota, and decide whether to
-establish a clean remote baseline first (switching sync→copy freezes the remote at
-its last-synced set plus all future additions).
+**Deployment completed 2026-08-07.** The earlier pending-deploy paragraph was stale.
+The closing session record confirms installation through `951f83c`, correction of
+backup ownership, and a successful off-site catch-up. Manual backup runs must use
+`sudo systemctl start scriptorium-backup.service`; do not run the script as root.
+Rechecked 2026-10-12: the installed script matches the repository, and the latest
+nightly service result is successful.
 
 **OPEN DECISION — scoped remote daily pruning.** Copy-only means the off-site `db/`
 folder grows forever (the 14-day prune is *local only*); it's the dominant off-site

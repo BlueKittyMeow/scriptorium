@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	let username = $state('');
 	let password = $state('');
 	let errorMsg = $state('');
@@ -15,7 +16,7 @@
 
 		submitting = true;
 		try {
-			const res = await fetch('/api/auth/login', {
+			const res = await apiFetch('/api/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ username: username.trim(), password })

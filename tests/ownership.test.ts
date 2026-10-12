@@ -208,7 +208,7 @@ describe('server-side load + library wiring (source-grep)', () => {
 		// No onMount at all — initial data comes from the server load.
 		expect(source).not.toContain('onMount');
 		// But the client refresh still re-fetches after create/import.
-		expect(source).toContain("fetch('/api/novels')");
+		expect(source).toContain("apiFetch('/api/novels')");
 		expect(source).toContain('data.novels');
 	});
 

@@ -88,6 +88,8 @@ This means that even if someone copies the database file, they cannot extract va
 
 Sessions last **30 days**. To avoid unnecessary database writes from autosave requests, the session is only extended when it has **fewer than 7 days remaining**. When extended, it resets to a fresh 30 days.
 
+Every authenticated response also reissues the browser cookie with the database's current expiry. This keeps the two expirations aligned and repairs cookies from sessions extended by older deployments. Invalid or expired sessions are never renewed. An expired sign-in during writing produces a message with a link to sign in in another tab, preserving the open editor.
+
 ### Session Invalidation
 
 All of a user's sessions are destroyed when:

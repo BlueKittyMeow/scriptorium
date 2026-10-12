@@ -17,16 +17,9 @@ describe('P0-1: Editor threads the target doc id into every save', () => {
 		const fs = await import('fs');
 		const source = fs.readFileSync(EDITOR, 'utf-8');
 
-		// All invocations of the save callback (not the prop type/decl, which use `onsave:`)
-		const calls = source.match(/onsave\(editor\.getHTML\(\)[^)]*\)/g) || [];
-		expect(calls.length).toBeGreaterThanOrEqual(2);
-
-		// Each call must include a second argument after getHTML()
-		for (const call of calls) {
-			expect(call).toMatch(/onsave\(editor\.getHTML\(\),\s*\w+\)/);
-		}
-
-		// The single-argument form must never appear
+		// The actual captured-id/concurrency guarantees are exercised in save-queue.test.ts.
+		expect(source).toContain('docId: currentDocId');
+		expect(source).toContain('(content, target) => onsave(content, target)');
 		expect(source).not.toContain('onsave(editor.getHTML())');
 	});
 

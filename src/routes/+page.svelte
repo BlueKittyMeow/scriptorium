@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import { goto } from '$app/navigation';
 	import type { ScrivProject, BundleImportReport } from '$lib/types.js';
 	import type { PageData } from './$types';
@@ -94,7 +95,7 @@
 		// /api/admin/users is archivist-only — never call it for writers.
 		if (!isArchivist || usersLoaded) return;
 		try {
-			const res = await fetch('/api/admin/users');
+			const res = await apiFetch('/api/admin/users');
 			if (res.ok) {
 				const body = await res.json();
 				usersList = body.users ?? [];
@@ -163,7 +164,8 @@
 	// Client refresh after create/import — re-fetch the same list the server load
 	// produced so the grid updates without a full navigation.
 	async function loadNovels() {
-		const res = await fetch('/api/novels');
+		const res = await apiFetch('/api/novels');
+		if (!res.ok) return;
 		novels = await res.json();
 	}
 
@@ -178,11 +180,12 @@
 		if (!newNovelTitle.trim()) return;
 		const payload: Record<string, unknown> = { title: newNovelTitle.trim() };
 		if (isArchivist && newNovelOwnerId) payload.owner_id = newNovelOwnerId;
-		const res = await fetch('/api/novels', {
+		const res = await apiFetch('/api/novels', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload)
 		});
+		if (!res.ok) return;
 		const novel = await res.json();
 		showNewNovelModal = false;
 		newNovelTitle = '';
@@ -229,7 +232,7 @@
 		try {
 			const importPayload: Record<string, unknown> = { path: importPath.trim() };
 			if (isArchivist && importOwnerId) importPayload.owner_id = importOwnerId;
-			const res = await fetch('/api/import', {
+			const res = await apiFetch('/api/import', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(importPayload)
@@ -258,7 +261,7 @@
 		scanAbort = abort;
 
 		try {
-			const res = await fetch('/api/import/scan', {
+			const res = await apiFetch('/api/import/scan', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ path: importPath.trim() }),
@@ -315,7 +318,7 @@
 		try {
 			const batchPayload: Record<string, unknown> = { paths };
 			if (isArchivist && importOwnerId) batchPayload.owner_id = importOwnerId;
-			const res = await fetch('/api/import/batch', {
+			const res = await apiFetch('/api/import/batch', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(batchPayload)
@@ -343,7 +346,7 @@
 		try {
 			const payload: Record<string, unknown> = { path: bundlePath.trim(), dry_run: true };
 			if (isArchivist && importOwnerId) payload.owner_id = importOwnerId;
-			const res = await fetch('/api/import/bundle', {
+			const res = await apiFetch('/api/import/bundle', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
@@ -371,7 +374,7 @@
 		try {
 			const payload: Record<string, unknown> = { path: bundlePath.trim(), dry_run: false };
 			if (isArchivist && importOwnerId) payload.owner_id = importOwnerId;
-			const res = await fetch('/api/import/bundle', {
+			const res = await apiFetch('/api/import/bundle', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
@@ -411,11 +414,12 @@
 	async function renameNovel(novelId: string) {
 		const trimmed = renamingNovelTitle.trim();
 		if (!trimmed) { renamingNovelId = null; return; }
-		await fetch(`/api/novels/${novelId}`, {
+		const response = await apiFetch(`/api/novels/${novelId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ title: trimmed })
 		});
+		if (!response.ok) return;
 		renamingNovelId = null;
 		await loadNovels();
 	}
@@ -435,18 +439,19 @@
 		e.preventDefault();
 		const idx = NOVEL_STATUSES.indexOf(currentStatus);
 		const next = NOVEL_STATUSES[(idx + 1) % NOVEL_STATUSES.length];
-		await fetch(`/api/novels/${novelId}`, {
+		const response = await apiFetch(`/api/novels/${novelId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ status: next })
 		});
+		if (!response.ok) return;
 		await loadNovels();
 	}
 
 	// ─── Collections: the bookshelf (universes → eras → version stacks) ──
 
 	async function loadCollections() {
-		const res = await fetch('/api/collections');
+		const res = await apiFetch('/api/collections');
 		if (res.ok) collections = await res.json();
 	}
 
@@ -567,22 +572,24 @@
 
 	// ─── Assignment (Move to… / drag-and-drop / Stack…) ─────────────────
 	async function assignCollection(novelId: string, collectionId: string | null) {
-		await fetch(`/api/novels/${novelId}`, {
+		const response = await apiFetch(`/api/novels/${novelId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ collection_id: collectionId })
 		});
+		if (!response.ok) return;
 		openMenuNovelId = null;
 		await loadNovels();
 	}
 
 	async function setStackLabel(novelId: string, label: string | null) {
 		const value = label && label.trim() ? label.trim() : null;
-		await fetch(`/api/novels/${novelId}`, {
+		const response = await apiFetch(`/api/novels/${novelId}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ stack_label: value })
 		});
+		if (!response.ok) return;
 		openMenuNovelId = null;
 		stackInput = '';
 		await loadNovels();
@@ -686,11 +693,12 @@
 		if (!title) return;
 		const payload: Record<string, unknown> = { title, owner_id: manageOwnerId };
 		if (newCollParent) payload.parent_id = newCollParent;
-		await fetch('/api/collections', {
+		const response = await apiFetch('/api/collections', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload)
 		});
+		if (!response.ok) return;
 		newCollTitle = '';
 		newCollParent = '';
 		await loadCollections();
@@ -699,11 +707,12 @@
 	async function renameCollection(id: string) {
 		const title = renamingCollTitle.trim();
 		if (!title) { renamingCollId = null; return; }
-		await fetch(`/api/collections/${id}`, {
+		const response = await apiFetch(`/api/collections/${id}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ title })
 		});
+		if (!response.ok) return;
 		renamingCollId = null;
 		await loadCollections();
 	}
@@ -716,12 +725,12 @@
 		const swapWith = siblings[idx + dir];
 		if (!swapWith) return;
 		await Promise.all([
-			fetch(`/api/collections/${coll.id}`, {
+			apiFetch(`/api/collections/${coll.id}`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ sort_order: swapWith.sort_order })
 			}),
-			fetch(`/api/collections/${swapWith.id}`, {
+			apiFetch(`/api/collections/${swapWith.id}`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ sort_order: coll.sort_order })
@@ -740,7 +749,8 @@
 	async function confirmDeleteCollection() {
 		const coll = deleteConfirmColl;
 		if (!coll) return;
-		await fetch(`/api/collections/${coll.id}`, { method: 'DELETE' });
+		const response = await apiFetch(`/api/collections/${coll.id}`, { method: 'DELETE' });
+		if (!response.ok) return;
 		deleteConfirmColl = null;
 		await Promise.all([loadCollections(), loadNovels()]);
 	}

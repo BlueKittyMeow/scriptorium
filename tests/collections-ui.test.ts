@@ -13,7 +13,7 @@ const SOURCE = fs.readFileSync('src/routes/+page.svelte', 'utf-8');
 describe('server load + client refresh wiring', () => {
 	it('receives collections from the server load and refetches them after edits', () => {
 		expect(SOURCE).toContain('data.collections');
-		expect(SOURCE).toContain("fetch('/api/collections')");
+		expect(SOURCE).toContain("apiFetch('/api/collections')");
 		expect(SOURCE).toContain('loadCollections');
 	});
 });

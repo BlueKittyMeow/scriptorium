@@ -3,9 +3,19 @@ import {
 	SESSION_COOKIE_NAME,
 	validateSession,
 	extendSession,
-	hashSessionToken
+	hashSessionToken,
+	sessionCookieOptions
 } from '$lib/server/auth.js';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
+import { publicServerError } from '$lib/server/errors.js';
+
+export const handleError: HandleServerError = ({ error, status }) => {
+	if (status === 404) return { message: 'This address does not match a Scriptorium page. Return to the library to find your writing.' };
+	const failure = publicServerError(error);
+	// Operational signal only. Never log requests, cookies, SQL, or document bodies.
+	console.error('Scriptorium request failed', { status, code: failure.code });
+	return failure;
+};
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.db = getDb();
@@ -25,7 +35,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 				.get(tokenHash) as { expires_at: string } | undefined;
 
 			if (row) {
-				extendSession(event.locals.db, tokenHash, new Date(row.expires_at));
+				const expiresAt = extendSession(event.locals.db, tokenHash, new Date(row.expires_at));
+				event.cookies.set(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions(event.url, expiresAt));
 			}
 		} else {
 			// Invalid or expired session — clear the cookie

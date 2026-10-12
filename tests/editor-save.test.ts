@@ -16,7 +16,8 @@ describe('editor save reliability', () => {
 		// The switchDocument function (called from the doc-switch effect)
 		// should await the onsave call before setting new content
 		expect(source).toMatch(/async\s+function\s+switchDocument/);
-		expect(source).toMatch(/await\s+onsave/);
+		expect(source).toContain('await flushSave()');
+		expect(source).toContain('new SaveQueue(');
 	});
 
 	it('should use keepalive fetch for onDestroy save', async () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import DiffView from '$lib/components/DiffView.svelte';
 	import MergeControls from '$lib/components/MergeControls.svelte';
 	import type { MatchedPair, DiffChange, MergeInstruction, MergeReport } from '$lib/types.js';
@@ -36,7 +37,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch('/api/compare/match', {
+			const res = await apiFetch('/api/compare/match', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ novelIdA, novelIdB })
@@ -81,7 +82,7 @@
 
 		diffLoading = true;
 		try {
-			const res = await fetch('/api/compare/diff', {
+			const res = await apiFetch('/api/compare/diff', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -104,7 +105,7 @@
 		merging = true;
 		error = null;
 		try {
-			const res = await fetch('/api/compare/merge', {
+			const res = await apiFetch('/api/compare/merge', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({

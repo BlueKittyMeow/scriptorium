@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import type { User } from '$lib/types.js';
 
 	// ─── State ───────────────────────────────────────────────────
@@ -28,7 +29,7 @@
 	// ─── Users ───────────────────────────────────────────────────
 
 	async function loadUsers() {
-		const res = await fetch('/api/admin/users');
+		const res = await apiFetch('/api/admin/users');
 		if (res.ok) {
 			const data = await res.json();
 			users = data.users;
@@ -42,7 +43,7 @@
 			userError = 'Username required, password must be 8+ characters';
 			return;
 		}
-		const res = await fetch('/api/admin/users', {
+		const res = await apiFetch('/api/admin/users', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ username: newUsername.trim(), password: newPassword, role: newRole })
@@ -64,7 +65,7 @@
 			alert('Password must be at least 8 characters');
 			return;
 		}
-		const res = await fetch(`/api/admin/users/${userId}`, {
+		const res = await apiFetch(`/api/admin/users/${userId}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ password: pw })
@@ -79,7 +80,7 @@
 
 	async function deleteUser(userId: string, username: string) {
 		if (!confirm(`Permanently delete user "${username}"? Their sessions will be destroyed.`)) return;
-		const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+		const res = await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
 		if (res.ok) {
 			await loadUsers();
 			userSuccess = `Deleted "${username}"`;
@@ -93,7 +94,7 @@
 
 	async function loadTrash() {
 		trashLoading = true;
-		const res = await fetch('/api/admin/trash');
+		const res = await apiFetch('/api/admin/trash');
 		if (res.ok) {
 			const data = await res.json();
 			trashItems = data.items;
@@ -102,20 +103,20 @@
 	}
 
 	async function restoreItem(type: string, id: string) {
-		const res = await fetch(`/api/admin/trash/${type}/${id}/restore`, { method: 'POST' });
+		const res = await apiFetch(`/api/admin/trash/${type}/${id}/restore`, { method: 'POST' });
 		if (res.ok) await loadTrash();
 	}
 
 	async function purgeItem(type: string, id: string, title: string) {
 		if (!confirm(`PERMANENTLY delete "${title}"? This cannot be undone.`)) return;
-		const res = await fetch(`/api/admin/trash/${type}/${id}/purge`, { method: 'DELETE' });
+		const res = await apiFetch(`/api/admin/trash/${type}/${id}/purge`, { method: 'DELETE' });
 		if (res.ok) await loadTrash();
 	}
 
 	// ─── Storage ─────────────────────────────────────────────────
 
 	async function loadStorage() {
-		const res = await fetch('/api/admin/storage');
+		const res = await apiFetch('/api/admin/storage');
 		if (res.ok) storageData = await res.json();
 	}
 
@@ -128,7 +129,7 @@
 	// ─── Audit ───────────────────────────────────────────────────
 
 	async function loadAudit(page = 1) {
-		const res = await fetch(`/api/admin/audit?page=${page}&limit=50`);
+		const res = await apiFetch(`/api/admin/audit?page=${page}&limit=50`);
 		if (res.ok) {
 			const data = await res.json();
 			auditEntries = data.entries;

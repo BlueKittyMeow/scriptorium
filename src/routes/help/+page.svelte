@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { apiFetch } from '$lib/api.js';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -64,7 +65,7 @@
 
 	async function loadHearts() {
 		try {
-			const res = await fetch('/api/roadmap/hearts');
+			const res = await apiFetch('/api/roadmap/hearts');
 			if (res.ok) heartRows = await res.json();
 		} finally {
 			heartsLoaded = true;
@@ -80,7 +81,7 @@
 		if (heartBusy[key]) return;
 		heartBusy[key] = true;
 		try {
-			const res = await fetch('/api/roadmap/hearts', {
+			const res = await apiFetch('/api/roadmap/hearts', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ key })
@@ -134,7 +135,7 @@
 		feedbackLoading = true;
 		feedbackError = '';
 		try {
-			const res = await fetch('/api/feedback');
+			const res = await apiFetch('/api/feedback');
 			if (!res.ok) throw new Error('failed');
 			feedbackItems = await res.json();
 			feedbackLoaded = true;
@@ -165,7 +166,7 @@
 		submitting = true;
 		submitError = '';
 		try {
-			const res = await fetch('/api/feedback', {
+			const res = await apiFetch('/api/feedback', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ type: newType, title: newTitle.trim(), body: newBody.trim() || undefined })
@@ -190,7 +191,7 @@
 	async function saveItem(item: FeedbackItem) {
 		savingId = item.id;
 		try {
-			await fetch(`/api/feedback/${item.id}`, {
+			const response = await apiFetch(`/api/feedback/${item.id}`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -198,6 +199,7 @@
 					response: editResponse[item.id]?.trim() ? editResponse[item.id] : null
 				})
 			});
+			if (!response.ok) return;
 			await loadFeedback();
 		} finally {
 			savingId = null;
@@ -211,11 +213,12 @@
 	async function sendReply(item: FeedbackItem) {
 		const text = replyDrafts[item.id]?.trim();
 		if (!text) return;
-		await fetch(`/api/feedback/${item.id}`, {
+		const response = await apiFetch(`/api/feedback/${item.id}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ status: 'answered', response: text })
 		});
+		if (!response.ok) return;
 		replyOpenFor = null;
 		await loadFeedback();
 	}
@@ -357,8 +360,20 @@
 			Your work saves itself. A couple of seconds after you stop typing, the save
 			runs automatically — watch the indicator in the bottom-right corner cycle from
 			<em>Unsaved changes</em> through <em>Saving...</em> to <em>Saved</em>. Switching
-			to another document or leaving the page also saves first. There is no Save
-			button because you never need one.
+			to another document saves first; if that save fails, your current chapter stays
+			open. Navigation is blocked while changes are unconfirmed, and closing or
+			reloading the tab asks you to confirm.
+		</p>
+		<h3>If something goes wrong</h3>
+		<p>
+			An error message explains what failed and what to do next. If your sign-in expires,
+			use <em>Sign in in a new tab</em>, then return to your writing tab and choose
+			<em>Retry save</em>. Keep the writing tab open until it says <em>Saved</em>.
+			<em>Download a copy</em> saves the text currently in the editor as an HTML file
+			you can open in a browser; it does not require a working server connection.
+			These changes are kept in the open tab, not automatically stored for recovery
+			after closing the browser. Failed chapter loads have a retry button and do not
+			replace an open chapter with blank text.
 		</p>
 
 		<h3>Spellcheck</h3>

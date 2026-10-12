@@ -11,8 +11,11 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const doc = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id) as any;
 	if (!doc) throw error(404, 'Document not found');
 
-	const content = readContentFile(doc.novel_id, doc.id) || '';
-	return json({ ...doc, content });
+	const content = readContentFile(doc.novel_id, doc.id);
+	if (doc.word_count > 0 && (content === null || !stripHtml(content).trim())) {
+		throw error(503, { code: 'CONTENT_UNAVAILABLE', message: 'This chapter has recorded writing, but its text file is unavailable. Contact your archivist to check storage and backups before editing it.' });
+	}
+	return json({ ...doc, content: content ?? '' });
 };
 
 // PUT /api/documents/:id — save content

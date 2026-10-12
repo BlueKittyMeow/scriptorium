@@ -37,13 +37,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	`;
 	const sqlParams = novelId ? [ftsQuery, novelId] : [ftsQuery];
 
-	try {
-		const results = locals.db.prepare(sql).all(...sqlParams) as any[];
-		for (const r of results) {
-			if (r.snippet) r.snippet = sanitizeSnippet(r.snippet);
-		}
-		return json(results);
-	} catch {
-		return json([]);
+	const results = locals.db.prepare(sql).all(...sqlParams) as any[];
+	for (const r of results) {
+		if (r.snippet) r.snippet = sanitizeSnippet(r.snippet);
 	}
+	return json(results);
 };

@@ -20,6 +20,13 @@ export interface RoadmapItem {
 export const ROADMAP_STATUSES = ['shipped', 'next', 'planned', 'someday'] as const;
 
 export const ROADMAP: RoadmapItem[] = [
+	{
+		key: 'session-and-error-recovery',
+		title: 'Clear errors and safer save recovery',
+		note: 'Active sign-ins renew correctly. Failed loads keep the current chapter; failed saves offer Retry save and Download a copy without leaving your writing.',
+		status: 'shipped',
+		shipped: '2026-10'
+	},
 	// ─── Shipped (2026-07) ───────────────────────────────────────────
 	{
 		key: 'archive-import',

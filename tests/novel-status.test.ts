@@ -129,7 +129,7 @@ describe('library card: status control (source-grep)', () => {
 		const fnEnd = SOURCE.indexOf('</script>');
 		const fnBody = SOURCE.slice(fnStart, fnEnd);
 		expect(fnBody).toContain('method: \'PUT\'');
-		expect(fnBody).toMatch(/fetch\(`\/api\/novels\/\$\{novelId\}`/);
+		expect(fnBody).toMatch(/apiFetch\(`\/api\/novels\/\$\{novelId\}`/);
 	});
 
 	it('is always visible (not hover-only), so it already works on touch per the rename-pencil fix', () => {

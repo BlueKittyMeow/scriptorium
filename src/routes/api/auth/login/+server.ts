@@ -5,7 +5,7 @@ import {
 	createSession,
 	cleanExpiredSessions,
 	SESSION_COOKIE_NAME,
-	SESSION_MAX_AGE
+	sessionCookieOptions
 } from '$lib/server/auth.js';
 import { logAction } from '$lib/server/audit.js';
 
@@ -31,7 +31,7 @@ function checkRateLimit(ip: string): boolean {
 	return true;
 }
 
-export const POST: RequestHandler = async ({ request, locals, cookies, getClientAddress }) => {
+export const POST: RequestHandler = async ({ request, url, locals, cookies, getClientAddress }) => {
 	const ip = getClientAddress();
 	if (!checkRateLimit(ip)) {
 		throw error(429, 'Too many login attempts. Try again in a minute.');
@@ -63,19 +63,9 @@ export const POST: RequestHandler = async ({ request, locals, cookies, getClient
 
 	const session = await createSession(locals.db, user.id);
 
-	// Determine if we should set secure flag
-	const host = request.headers.get('host') || '';
-	const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
-
 	logAction(locals.db, user.id, 'user.login');
 
-	cookies.set(SESSION_COOKIE_NAME, session.token, {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'lax',
-		secure: !isLocalhost,
-		maxAge: SESSION_MAX_AGE
-	});
+	cookies.set(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(url, session.expiresAt));
 
 	return json({
 		user: {

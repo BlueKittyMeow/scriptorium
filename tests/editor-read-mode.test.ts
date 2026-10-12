@@ -104,7 +104,7 @@ describe('Editor: leaving edit mode flushes pending work', () => {
 	});
 
 	it('awaits flushSave when leaving edit mode', () => {
-		expect(setModeFn).toMatch(/if \(mode === 'edit'\) await flushSave\(\);/);
+		expect(setModeFn).toMatch(/if \(mode === 'edit' && !\(await flushSave\(\)\)\) return;/);
 	});
 
 	it('flushes before the mode actually changes, so nothing typed is lost', () => {
