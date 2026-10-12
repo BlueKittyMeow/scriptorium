@@ -29,7 +29,10 @@ export async function convertHtmlToFormat(
 
 	try {
 		const inputBuffer = Buffer.from(html, 'utf-8');
-		const result = await spawnPandoc(args, inputBuffer);
+		const result = format === 'pdf'
+			? await spawnPandoc(['scripts/render-pdf.py'], inputBuffer, process.env.SCRIPTORIUM_PDF_PYTHON || '/usr/bin/python3')
+			: await spawnPandoc(args, inputBuffer);
+		if (format === 'pdf' && result.subarray(0, 5).toString() !== '%PDF-') throw new Error('PDF renderer did not produce a PDF');
 
 		return {
 			buffer: result,
@@ -68,19 +71,16 @@ export function buildPandocArgs(format: CompileFormat, metadata: CompileMetadata
 		}
 	}
 
-	if (format === 'pdf') {
-		args.push('--pdf-engine=wkhtmltopdf');
-	}
 
 	return args;
 }
 
 /** Spawn Pandoc with stdin piping for proper binary output handling */
-function spawnPandoc(args: string[], input: Buffer): Promise<Buffer> {
+function spawnPandoc(args: string[], input: Buffer, command = 'pandoc'): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn('pandoc', args, {
+		const proc = spawn(command, args, {
 			stdio: ['pipe', 'pipe', 'pipe'],
-			timeout: 60000
+			timeout: 120000
 		});
 
 		const chunks: Buffer[] = [];

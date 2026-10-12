@@ -50,7 +50,7 @@ describe('P1-10 part 3: buildPandocArgs per-format metadata policy', () => {
 		const args = buildPandocArgs('pdf', { title: 'My Novel', subtitle: 'A Subtitle' });
 		expect(args.some((a) => a.startsWith('--metadata=title:'))).toBe(false);
 		expect(args.some((a) => a.startsWith('--metadata=subtitle:'))).toBe(false);
-		expect(args).toContain('--pdf-engine=wkhtmltopdf');
+		expect(args.some((a) => a.startsWith('--pdf-engine='))).toBe(false); // PDF uses the restricted renderer directly.
 	});
 
 	it('all formats still pass --standalone', async () => {

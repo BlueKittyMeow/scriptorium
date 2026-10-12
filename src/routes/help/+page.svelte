@@ -312,7 +312,7 @@
 		<ul>
 			<li><strong>Add a document or folder:</strong> click <em>+ Doc</em> or <em>+ Folder</em> at the top of the binder. The + button on a folder row adds a document inside that folder.</li>
 			<li><strong>Open a document:</strong> click its title. Word counts appear beside each document.</li>
-			<li><strong>Reorder:</strong> drag any item and drop it above, below, or (for folders) onto another item to nest it inside.</li>
+			<li><strong>Reorder:</strong> drag any item and drop it above, below, or onto a folder to nest it inside. On a phone, use the item’s move menu, then Move up, Move down, or Move into… to choose a folder. These controls also work on desktop.</li>
 			<li><strong>Collapse the binder:</strong> click the ◀ toggle to give your text the full width. On a phone, the binder slides over the editor — tap ☰ to open it, tap a document (or the dimmed area) to close it.</li>
 		</ul>
 
@@ -329,6 +329,12 @@
 			<em>Edit</em> and forget this exists.
 		</p>
 
+		<h3>Chapter navigation and numbering</h3>
+		<p>Use <em>Previous chapter</em> and <em>Next chapter</em> in the reader toolbar to follow binder order, including across folders. Turn on <em>Number chapters</em> in the binder to show automatic numbers. Each folder starts at 1. A folder’s move menu can disable its numbering; a document’s menu can exclude an epigraph or other unnumbered item. Numbers update when you reorder. Stored titles stay as you wrote them; compiled headings include the numbers.</p>
+		<h3>Writing without a connection</h3>
+		<p>While connected, open a work and choose <em>Keep on this device</em>. Wait for the complete download, then open <em>Device copies</em> and bookmark that page on your phone. You can read and edit downloaded chapters there when the server is unavailable, even after reloading. Creating or moving chapters still needs a connection.</p>
+		<p><em>Saved on this device</em> confirms a local save. Device copies retry syncing when a connection returns; <em>Sync now</em> retries manually. Sign in to the same account if requested. If another device changed the chapter, both versions are preserved and syncing stops: download the unsynced draft and compare it with the server copy before merging your writing. Use <em>Refresh device copy</em> online to pick up changed titles, order, and new chapters.</p>
+		<p>Downloads are private to this browser profile, but anyone using that unlocked profile may access them. Signing out locks the device-copy screen until you sign in again. Browser storage can be cleared by the browser or by you; keep exports and backups as well. Removing device copies is blocked while drafts await sync.</p>
 		<h3>The editor</h3>
 		<p>
 			In <em>Edit</em> mode the toolbar covers the essentials: bold, italic, three
@@ -371,8 +377,7 @@
 			<em>Retry save</em>. Keep the writing tab open until it says <em>Saved</em>.
 			<em>Download a copy</em> saves the text currently in the editor as an HTML file
 			you can open in a browser; it does not require a working server connection.
-			These changes are kept in the open tab, not automatically stored for recovery
-			after closing the browser. Failed chapter loads have a retry button and do not
+			For works you have not downloaded with <em>Keep on this device</em>, these changes remain only in the open tab until saved to the server. Failed chapter loads have a retry button and do not
 			replace an open chapter with blank text.
 		</p>
 

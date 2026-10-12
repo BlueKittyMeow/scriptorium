@@ -15,14 +15,15 @@ export function collectCompileDocuments(
 	includeIds?: string[]
 ): CompileDocument[] {
 	const folders = db.prepare(
-		'SELECT id, parent_id, sort_order FROM folders WHERE novel_id = ? AND deleted_at IS NULL ORDER BY sort_order'
-	).all(novelId) as { id: string; parent_id: string | null; sort_order: number }[];
+		'SELECT id, parent_id, sort_order, numbering_enabled FROM folders WHERE novel_id = ? AND deleted_at IS NULL ORDER BY sort_order'
+	).all(novelId) as { id: string; parent_id: string | null; sort_order: number; numbering_enabled: number }[];
 
 	const documents = db.prepare(
-		'SELECT id, parent_id, title, sort_order, compile_include FROM documents WHERE novel_id = ? AND deleted_at IS NULL ORDER BY sort_order'
-	).all(novelId) as { id: string; parent_id: string | null; title: string; sort_order: number; compile_include: number }[];
+		'SELECT id, parent_id, title, sort_order, compile_include, numbering_include FROM documents WHERE novel_id = ? AND deleted_at IS NULL ORDER BY sort_order'
+	).all(novelId) as { id: string; parent_id: string | null; title: string; sort_order: number; compile_include: number; numbering_include: number }[];
 
 	const result: CompileDocument[] = [];
+	const numbered = !!(db.prepare('SELECT numbering_enabled FROM novels WHERE id = ?').get(novelId) as { numbering_enabled: number } | undefined)?.numbering_enabled;
 
 	// Pre-index children by parent_id for O(1) lookup (avoids O(N²) repeated .filter())
 	const foldersByParent = new Map<string | null, typeof folders>();
@@ -41,28 +42,30 @@ export function collectCompileDocuments(
 
 	const includeSet = includeIds ? new Set(includeIds) : null;
 
-	function walkSorted(parentId: string | null): void {
+	function walkSorted(parentId: string | null, folderEnabled = true): void {
+		let chapter = 0;
 		const childFolders = foldersByParent.get(parentId) || [];
 		const childDocs = docsByParent.get(parentId) || [];
 
 		// Merge folders and documents by sort_order
-		const items: { type: 'folder' | 'document'; sort_order: number; id: string; title?: string; compile_include?: number }[] = [
-			...childFolders.map(f => ({ type: 'folder' as const, sort_order: f.sort_order, id: f.id })),
-			...childDocs.map(d => ({ type: 'document' as const, sort_order: d.sort_order, id: d.id, title: d.title, compile_include: d.compile_include }))
+		const items: { type: 'folder' | 'document'; sort_order: number; id: string; title?: string; compile_include?: number; numbering_include?: number; numbering_enabled?: number }[] = [
+			...childFolders.map(f => ({ type: 'folder' as const, sort_order: f.sort_order, id: f.id, numbering_enabled: f.numbering_enabled })),
+			...childDocs.map(d => ({ type: 'document' as const, sort_order: d.sort_order, id: d.id, title: d.title, compile_include: d.compile_include, numbering_include: d.numbering_include }))
 		];
 		items.sort((a, b) => a.sort_order - b.sort_order);
 
 		for (const item of items) {
 			if (item.type === 'document') {
+				const title = numbered && folderEnabled && item.numbering_include !== 0 ? `${++chapter}. ${item.title}` : item.title!;
 				if (includeSet) {
 					if (includeSet.has(item.id)) {
-						result.push({ id: item.id, title: item.title!, novelId });
+						result.push({ id: item.id, title, novelId });
 					}
 				} else if (item.compile_include) {
-					result.push({ id: item.id, title: item.title!, novelId });
+					result.push({ id: item.id, title, novelId });
 				}
 			} else {
-				walkSorted(item.id);
+				walkSorted(item.id, item.numbering_enabled !== 0);
 			}
 		}
 	}

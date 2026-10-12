@@ -20,13 +20,15 @@ describe('editor save reliability', () => {
 		expect(source).toContain('new SaveQueue(');
 	});
 
-	it('should use keepalive fetch for onDestroy save', async () => {
+	it('persists a local draft instead of an unconditional unload overwrite', async () => {
 		const fs = await import('fs');
 		const source = fs.readFileSync('src/lib/components/Editor.svelte', 'utf-8');
 
 		// The onDestroy should use fetch with keepalive: true
 		// to ensure the save completes even during page unload
-		expect(source).toContain('keepalive');
+		const block = source.match(/onDestroy\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] || '';
+		expect(block).toContain('ondraft?.');
+		expect(block).not.toContain('fetch(');
 	});
 
 	it('onDestroy should also save when status is "saving" (in-flight) (#5)', async () => {

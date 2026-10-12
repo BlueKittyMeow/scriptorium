@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { localGet, localDrafts, getDraft, getLocalDocument, cacheDocument, saveDraft, syncDraft, downloadWork, type LocalWork } from '$lib/offline.js';
+	import { chapterNumbers, readingOrder } from '$lib/chapters.js';
 	import { apiFetch } from '$lib/api.js';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
@@ -21,6 +23,7 @@
 
 	let { data } = $props();
 
+	let numberingEnabled = $state(false);
 	let tree: TreeNode[] = $state([]);
 	let activeDocId: string | null = $state(null);
 	let activeDoc: any = $state(null);
@@ -73,12 +76,41 @@
 	let moveModalNode: TreeNode | null = $state(null);
 
 	const novelId = $derived($page.params.id!);
+	const numbers = $derived(chapterNumbers(tree, numberingEnabled));
+	const chapters = $derived(readingOrder(tree));
+	const chapterIndex = $derived(chapters.findIndex(n => n.id === activeDocId));
 	const trashedItems = $derived(collectTrashed(tree));
 	const newItemParentTitle = $derived(newItemParent ? findNodeById(tree, newItemParent)?.title ?? null : null);
 	const moveTargets = $derived(moveModalNode ? getMoveTargets(tree, moveModalNode) : []);
 
 	onMount(async () => {
+		numberingEnabled = !!data.novel.numbering_enabled;
 		await loadTree();
+		if (data.user) offlineEnabled = !!(await localGet<LocalWork>(`work:${data.user.id}:${novelId}`).catch(() => undefined));
+	});
+
+	onMount(() => {
+		let syncing = false;
+		const reconnect = async () => {
+			if (syncing) return;
+			if (!offlineEnabled || !data.user) return;
+			syncing = true;
+			try {
+				await localWrites;
+				for (const draft of await localDrafts(data.user.id)) {
+					if (draft.document.novel_id === novelId) await syncDraft(draft);
+				}
+				offlineMessage = 'Device writing synced to the server.';
+				if (activeDocId) {
+					const cached = await getLocalDocument(data.user.id, activeDocId);
+					if (cached) { loadedDocuments.set(activeDocId, cached); activeDoc = { ...activeDoc, content_revision: cached.content_revision }; }
+				}
+			} catch (e) { offlineMessage = String(e); }
+			finally { syncing = false; }
+		};
+		window.addEventListener('online', reconnect);
+		const retry = setInterval(() => { if (navigator.onLine && !offlineMessage.includes('Conflict:')) void reconnect(); }, 15000);
+		return () => { window.removeEventListener('online', reconnect); clearInterval(retry); };
 	});
 
 	let treeLoading = $state(false);
@@ -113,10 +145,26 @@
 
 	async function selectDocument(docId: string) {
 		const request = ++selectionRequest;
-		const res = await apiFetch(`/api/documents/${docId}`);
+		let res = await apiFetch(`/api/documents/${docId}`);
+		if (!res.ok && res.status >= 500 && offlineEnabled && data.user) {
+			const cached = await getLocalDocument(data.user.id, docId).catch(() => undefined);
+			if (cached) res = Response.json(cached);
+		}
 		if (request !== selectionRequest) return;
 		if (!res.ok) { documentError = { id: docId, message: (await res.json()).message }; return; }
-		const document = await res.json();
+		let document = await res.json();
+		if (offlineEnabled && data.user) {
+			try {
+				await cacheDocument(data.user.id, document);
+				const draft = await getDraft(data.user.id, docId);
+				generations.set(docId, draft?.generation ?? 0);
+				if (draft?.dirty) {
+					document = { ...document, content: draft.content, content_revision: draft.base_revision };
+					saveLocation = 'Saved on this device'; offlineMessage = 'Recovered device writing. Open Device copies to sync it.';
+				} else saveLocation = 'Saved';
+			} catch (e) { offlineMessage = String(e); }
+		}
+		loadedDocuments.set(docId, document);
 		// Flush AFTER loading, so edits made during a slow request are included.
 		if (editorFlush && !(await editorFlush())) return;
 		if (request !== selectionRequest) return;
@@ -129,19 +177,64 @@
 		if (typeof window !== 'undefined' && window.innerWidth <= 768) sidebarOpen = false;
 	}
 
+	let offlineEnabled = $state(false);
+	let offlineMessage = $state('');
+	let downloading = $state(false);
+	let saveLocation = $state('Saved');
+	let localWrites: Promise<void> = Promise.resolve();
+	let localError: Error | undefined;
+	const generations = new Map<string, number>();
+	const loadedDocuments = new Map<string, any>();
+
+	function persistDraft(content: string, docId: string) {
+		if (!offlineEnabled || !data.user) return;
+		const document = loadedDocuments.get(docId);
+		if (!document) return;
+		const userId = data.user.id;
+		localWrites = localWrites.then(async () => {
+			try {
+				const draft = await saveDraft(userId, document, content, generations.get(docId) ?? 0);
+				generations.set(docId, draft.generation); localError = undefined;
+			} catch (e) { localError = e as Error; offlineMessage = String(e); }
+		});
+	}
+	async function keepOnDevice() {
+		if (!data.user || downloading) return;
+		if (!offlineEnabled && !confirm('Save this work on this device for offline reading and writing? Use a private device: downloaded writing remains in browser storage until you remove it. Browser storage is an extra copy, not a replacement for exports and backups.')) return;
+		downloading = true;
+		try {
+			if (editorFlush && !(await editorFlush())) return;
+			await downloadWork(data.user.id, $state.snapshot(data.novel), $state.snapshot(tree), message => offlineMessage = message);
+			offlineEnabled = true;
+		} catch (e) { offlineMessage = String(e); }
+		finally { downloading = false; }
+	}
 	async function saveDocument(content: string, docId: string) {
 		if (!docId) return;
+		if (offlineEnabled && data.user) {
+			persistDraft(content, docId); await localWrites;
+			if (localError) throw localError;
+			const draft = await getDraft(data.user.id, docId);
+			if (!draft) throw new Error('Device save was not confirmed. Keep this chapter open.');
+			saveLocation = 'Saved on this device';
+			try {
+				await syncDraft(draft);
+				const cached = await getLocalDocument(data.user.id, docId);
+				if (cached) { loadedDocuments.set(docId, cached); if (activeDoc?.id === docId) activeDoc = { ...activeDoc, content_revision: cached.content_revision }; }
+				if (cached) { updateTreeNodeWordCount(tree, docId, cached.word_count); tree = [...tree]; }
+			saveLocation = 'Saved on device and server'; offlineMessage = '';
+			} catch (e) { offlineMessage = `${String(e)} Open Device copies to retry sync or recover your draft.`; }
+			return;
+		}
 		const res = await apiFetch(`/api/documents/${docId}`, {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ content })
+			method: 'PUT', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ content, base_revision: activeDoc?.id === docId ? activeDoc.content_revision : undefined })
 		});
-		// Surface HTTP failures so the Editor's catch flips status back to 'unsaved'.
 		if (!res.ok) throw new Error((await res.json()).message);
 		const updated = await res.json();
-		// Update word count in tree for the doc the content belongs to, not activeDocId.
+		if (activeDoc?.id === docId) activeDoc = { ...activeDoc, ...updated };
 		updateTreeNodeWordCount(tree, docId, updated.word_count);
-		tree = [...tree]; // trigger reactivity
+		tree = [...tree];
 	}
 
 	// ─── Snapshot functions ─────────────────────────────────────────────
@@ -618,6 +711,18 @@
 		await loadTree();
 	}
 
+	async function toggleNumbering(node?: TreeNode) {
+		const key = node?.type === 'document' ? 'numbering_include' : 'numbering_enabled';
+		const enabled = node ? node[key] !== 0 : !!data.novel.numbering_enabled;
+		const response = await apiFetch(node ? `/api/novels/${novelId}/tree/nodes/${node.id}` : `/api/novels/${novelId}`, {
+			method: node ? 'PATCH' : 'PUT', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ...(node ? { type: node.type } : {}), [key]: !enabled })
+		});
+		if (!response.ok) return;
+		if (node) await loadTree();
+		else { numberingEnabled = !enabled; data.novel.numbering_enabled = enabled ? 0 : 1; }
+	}
+
 	function toggleNodeMenu(nodeId: string) {
 		openMenuNodeId = openMenuNodeId === nodeId ? null : nodeId;
 	}
@@ -644,6 +749,10 @@
 	<aside class="sidebar" class:collapsed={!sidebarOpen}>
 		<div class="sidebar-header">
 			<a href="/" class="back-link">← Library</a>
+			<button class="numbering-toggle" onclick={keepOnDevice} disabled={downloading}>{downloading ? 'Downloading…' : offlineEnabled ? 'Refresh device copy' : 'Keep on this device'}</button>
+			<a href="/offline" data-sveltekit-reload>Device copies</a>
+			{#if offlineMessage}<p class="offline-message" role="status">{offlineMessage}</p>{/if}
+			<button class="numbering-toggle" aria-pressed={numberingEnabled} onclick={() => toggleNumbering()}>Number chapters: {numberingEnabled ? 'on' : 'off'}</button>
 			{#if editingNovelTitle}
 				<!-- svelte-ignore a11y_autofocus -->
 				<input
@@ -760,7 +869,12 @@
 						docId={activeDoc.id}
 						initialContent={activeDoc.content || ''}
 						title={activeDoc.title}
+						chapterNumber={activeDocId ? numbers.get(activeDocId) : undefined}
+						onprevious={chapterIndex > 0 ? () => selectDocument(chapters[chapterIndex - 1].id) : undefined}
+						onnext={chapterIndex >= 0 && chapterIndex < chapters.length - 1 ? () => selectDocument(chapters[chapterIndex + 1].id) : undefined}
 						onsave={saveDocument}
+						ondraft={persistDraft}
+						savedLabel={saveLocation}
 						searchTerm={pendingSearchTerm}
 						onSearchHighlightDone={() => { pendingSearchTerm = null; }}
 						onSnapshotsToggle={toggleSnapshots}
@@ -977,7 +1091,7 @@
 					/>
 				{:else}
 					<button class="node-title doc-title" onclick={() => selectDocument(node.id)} ondblclick={() => startRename(node)} title="Double-click to rename">
-						{node.title}
+						{#if numbers.has(node.id)}<span class="chapter-badge">{numbers.get(node.id)}.</span> {/if}{node.title}
 					</button>
 				{/if}
 				{#if node.word_count}
@@ -991,6 +1105,7 @@
 
 			{#if openMenuNodeId === node.id}
 				<div class="node-menu" role="menu">
+					<button class="node-menu-item" onclick={() => { toggleNumbering(node); openMenuNodeId = null; }}>{node.type === 'folder' ? (node.numbering_enabled === 0 ? 'Enable folder numbering' : 'Disable folder numbering') : (node.numbering_include === 0 ? 'Include in numbering' : 'Exclude from numbering')}</button>
 					<button
 						class="node-menu-item"
 						onclick={() => { openMenuNodeId = null; startRename(node); }}
@@ -1022,6 +1137,8 @@
 {/snippet}
 
 <style>
+	.numbering-toggle { font: inherit; font-size: .8rem; padding: .5rem; cursor: pointer; }
+	.chapter-badge { color: var(--text-secondary); }
 	.load-error { padding: .75rem; color: var(--error-text); background: var(--error-bg); font-size: .85rem; }
 	.load-error button { font: inherit; padding: .4rem; cursor: pointer; }
 	.workspace {
@@ -1351,12 +1468,9 @@
 		display: flex;
 	}
 
-	/* Drag-and-drop covers reordering on desktop already, so the ↑/↓/Move-into
-	   trigger stays hidden there (even on row hover) and only appears where
-	   drag-and-drop can't work — coarse (touch) pointers. Declared before the
-	   @media override below so the override wins the cascade on touch devices. */
+	/* The menu exposes numbering and keyboard/touch movement on every device. */
 	.node-menu-btn {
-		display: none;
+		display: inline-block;
 	}
 
 	/* Touch devices have no hover — reveal load-bearing row actions permanently */
@@ -1365,7 +1479,7 @@
 			display: flex;
 		}
 
-		/* Reveal the touch-only move menu trigger too (see .node-menu-btn above) */
+		/* Keep the move menu available without hover. */
 		.node-menu-btn {
 			display: inline-block;
 		}

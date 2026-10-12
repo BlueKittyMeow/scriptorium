@@ -49,6 +49,7 @@ export function getDb(): Database.Database {
 		// Roadmap hearts mini-migration (idempotent). Adds the roadmap_hearts
 		// table (per-user "I want this sooner" toggle on the Roadmap tab).
 		runRoadmapHeartsMigration(_db);
+		runChapterNumberingMigration(_db);
 	} catch (err) {
 		_db = null;
 		throw new Error(`Database initialization failed (DATA_ROOT=${DATA_ROOT}): ${err instanceof Error ? err.message : err}`);
@@ -258,6 +259,17 @@ export function runRoadmapHeartsMigration(db: Database.Database): void {
 		  PRIMARY KEY (item_key, user_id)
 		);
 	`);
+}
+
+export function runChapterNumberingMigration(db: Database.Database): void {
+	for (const [table, column, defaultValue] of [
+		['novels', 'numbering_enabled', 0], ['folders', 'numbering_enabled', 1],
+		['documents', 'numbering_include', 1]
+	] as const) {
+		const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+		if (!columns.some(c => c.name === column))
+			db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} INTEGER NOT NULL DEFAULT ${defaultValue}`);
+	}
 }
 
 const SCHEMA = `

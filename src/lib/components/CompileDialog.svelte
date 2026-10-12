@@ -127,7 +127,8 @@
 			document.body.appendChild(a);
 			a.click();
 			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
+			// Mobile browsers may consume the blob after the click handler returns.
+			setTimeout(() => URL.revokeObjectURL(url), 60000);
 		} catch (err) {
 			errorMsg = err instanceof Error ? err.message : 'Compile failed';
 		} finally {

@@ -37,6 +37,16 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const now = new Date().toISOString();
 	const nodeType = body.type || 'document';
 
+	if (nodeType !== 'folder' && nodeType !== 'document') throw error(400, 'Invalid node type');
+	const numberingKey = nodeType === 'folder' ? 'numbering_enabled' : 'numbering_include';
+	if (body[numberingKey] !== undefined) {
+		if (typeof body[numberingKey] !== 'boolean') throw error(400, `${numberingKey} must be a boolean`);
+		const table = nodeType === 'folder' ? 'folders' : 'documents';
+		const result = locals.db.prepare(`UPDATE ${table} SET ${numberingKey} = ?, updated_at = ? WHERE id = ? AND novel_id = ? AND deleted_at IS NULL`)
+			.run(body[numberingKey] ? 1 : 0, now, params.nodeId, params.id);
+		if (!result.changes) throw error(404, 'Node not found');
+	}
+
 	// Restore from trash
 	if (body.restore) {
 		const { readContentFile, stripHtml } = await import('$lib/server/files.js');

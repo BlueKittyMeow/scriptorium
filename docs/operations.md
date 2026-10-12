@@ -202,3 +202,61 @@ and mobile error controls. It never uses the production database. Set
 `BROWSER_EXECUTABLE` to an installed Chromium/Chrome binary (default
 `/usr/bin/google-chrome`). Screenshots and results are written to a temporary
 directory reported by the runner.
+
+## Offline copies, numbering, and PDF export (2026-10-12)
+
+Downloaded works live in account-keyed IndexedDB records, with a public, empty
+service-worker shell at `/offline`. Authenticated HTML and API responses never
+enter the service-worker cache. Download completion is published only after all
+chapters arrive. Browser eviction and user-cleared storage remain possible;
+persistent-storage permission is requested, and exports/backups remain necessary.
+Signing out removes the active account marker; syncing checks the server account
+again. Copies are not encrypted against someone using the same browser profile.
+
+Every local write waits for its IndexedDB transaction to commit. Generations stop
+one tab from replacing another tab's newer draft. Server saves compare a SHA-256
+content revision; stale saves return 409, while retries of identical content are
+safe. Conflict recovery currently uses a downloaded draft and manual comparison;
+there is no automatic merge. Offline editing covers existing downloaded chapter
+text; tree changes, imports, snapshots, and exports require the server.
+
+Numbering is opt-in per work, restarts independently inside each folder, and can
+exclude individual documents or folders. Nested folders have their own setting.
+Numbers are computed from visible binder order, including for compiled headings;
+stored titles are unchanged. A compile selection retains binder numbers (gaps
+are possible when a numbered chapter is excluded from compilation).
+
+PDF rendering requires Python 3 + WeasyPrint (`apt-get install --no-install-recommends
+weasyprint` on Factotum); Word/EPUB/Markdown still use Pandoc. The PDF helper
+`scripts/render-pdf.py` denies network and file resource loads. It reads assembled
+HTML on stdin and writes PDF bytes on stdout, preserving chapter page breaks.
+`SCRIPTORIUM_PDF_PYTHON` optionally selects an isolated test interpreter. Run from
+the repository root. The former `wkhtmltopdf` dependency was absent on Factotum.
+Download object URLs remain valid for one minute to allow mobile consumption.
+
+Validation: `npm test`, `npm run check`, `npm run test:browser`, and
+`npm run test:offline` (requires the PDF renderer and Chrome). The last command
+uses disposable accounts/data and a production build to test service-worker cold
+starts, offline saving/reconnection, conflict protection, storage failures,
+chapter movement/numbering, and a real mobile-sized PDF download.
+
+The shared verified backup engine is maintained in sibling `learning-platform`
+at `deploy/household-backup/`, installed as `/usr/local/lib/household-backup/`.
+Its systemd units are the deployment source of truth; install the shared engine
+before using this repository's backup wrapper. It publishes checked SQLite
+snapshots, records content SHA-256 manifests, rejects changed immutable writing
+snapshots and unexplained content changes, and retains replaced mirror bytes by
+hash. History begins when the manifests are first installed; it cannot identify
+pre-existing corruption without an older trusted baseline. Remote daily backups,
+monthly copies, mirrored writing, and content history are retained without
+pruning. Local dated daily snapshots retain the established 14-day policy.
+
+Restore drill, 2026-10-12: the current Drive snapshot matched the local database
+(1,988 document rows); all 2,646 mirrored HTML files matched by SHA-256. The
+restored app opened existing writing and created/read a new test chapter on an
+isolated database. **When restoring the legacy data-mirror, exclude
+`scriptorium.db*`; use the verified `db/` snapshot instead.** Old mirrors may
+contain live SQLite WAL/SHM files from the former rsync implementation. Move any
+such files aside before installing the chosen snapshot. Never open a restored
+snapshot beside journals from a different database. Evidence is retained at
+`/mnt/media/household-backup/restore-20261012/` on Factotum.

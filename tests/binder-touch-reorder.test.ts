@@ -77,11 +77,11 @@ describe('binder rows: touch-only "Move into…" picker', () => {
 });
 
 describe('binder rows: new touch controls are gated to coarse pointers, invisible on desktop', () => {
-	it('has a touch-only class default-hidden outside the coarse-pointer query', () => {
+	it('exposes the move menu on desktop as well as touch', () => {
 		const beforeMedia = SOURCE.split('@media (pointer: coarse)')[0];
 		// whatever class gates the new controls must default to display: none
 		// so hovering a row on desktop does not reveal them
-		expect(beforeMedia).toMatch(/\.node-menu-btn\s*\{[^}]*display:\s*none/);
+		expect(beforeMedia).toMatch(/\.node-menu-btn\s*\{[^}]*display:\s*inline-block/);
 	});
 
 	it('reveals the touch-only controls inside the existing coarse-pointer block, after the default-hidden declaration (cascade order)', () => {

@@ -7,6 +7,7 @@ export interface User {
 }
 
 export interface Novel {
+	numbering_enabled?: number;
 	id: string;
 	title: string;
 	subtitle: string | null;
@@ -20,6 +21,7 @@ export interface Novel {
 }
 
 export interface Folder {
+	numbering_enabled?: number;
 	id: string;
 	novel_id: string;
 	parent_id: string | null;
@@ -32,6 +34,7 @@ export interface Folder {
 }
 
 export interface Document {
+	numbering_include?: number;
 	id: string;
 	novel_id: string;
 	parent_id: string | null;
@@ -64,6 +67,8 @@ export interface SnapshotSummary {
 }
 
 export interface TreeNode {
+	numbering_enabled?: number;
+	numbering_include?: number;
 	id: string;
 	type: 'folder' | 'document';
 	title: string;

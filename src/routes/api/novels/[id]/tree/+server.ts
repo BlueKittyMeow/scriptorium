@@ -29,6 +29,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				title: f.title,
 				sort_order: f.sort_order,
 				folder_type: f.folder_type,
+				numbering_enabled: f.numbering_enabled,
 				deleted_at: f.deleted_at,
 				children: buildTree(f.id)
 			});
@@ -42,6 +43,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				sort_order: d.sort_order,
 				word_count: d.word_count,
 				compile_include: d.compile_include,
+				numbering_include: d.numbering_include,
 				synopsis: d.synopsis,
 				deleted_at: d.deleted_at,
 				children: []

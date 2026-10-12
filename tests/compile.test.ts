@@ -166,9 +166,10 @@ describe('Layer 0: pandoc wrapper', () => {
 		expect(source).not.toMatch(/\bexec\b[^F]/); // exec but not execFile
 	});
 
-	it('should support wkhtmltopdf as PDF engine', () => {
+	it('uses the restricted PDF renderer', () => {
 		const source = fs.readFileSync('src/lib/server/compile/pandoc.ts', 'utf-8');
-		expect(source).toContain('wkhtmltopdf');
+		expect(source).toContain('scripts/render-pdf.py');
+		expect(fs.readFileSync('scripts/render-pdf.py', 'utf-8')).toContain('url_fetcher=deny_resources');
 	});
 
 	it('should export checkPandocAvailable function', () => {

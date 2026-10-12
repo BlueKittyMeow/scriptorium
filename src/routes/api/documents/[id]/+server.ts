@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { v4 as uuid } from 'uuid';
 import { readContentFile, writeContentFile, writeSnapshotFile, stripHtml, countWords } from '$lib/server/files.js';
 import { requireUser } from '$lib/server/auth.js';
 import { assertValidDocumentContent, normalizeOptionalString } from '$lib/server/validate.js';
+
+const revision = (content: string) => createHash('sha256').update(content).digest('hex');
 
 // GET /api/documents/:id — metadata + content
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -15,7 +18,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (doc.word_count > 0 && (content === null || !stripHtml(content).trim())) {
 		throw error(503, { code: 'CONTENT_UNAVAILABLE', message: 'This chapter has recorded writing, but its text file is unavailable. Contact your archivist to check storage and backups before editing it.' });
 	}
-	return json({ ...doc, content: content ?? '' });
+	return json({ ...doc, content: content ?? '', content_revision: revision(content ?? '') });
 };
 
 // PUT /api/documents/:id — save content
@@ -29,6 +32,18 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 	// Non-string content is rejected; oversized content is rejected (413).
 	const html = assertValidDocumentContent(body.content);
+
+	// Optimistic concurrency: never silently replace edits from another device.
+	const previous = readContentFile(doc.novel_id, doc.id);
+	if (body.base_revision !== undefined) {
+		if (typeof body.base_revision !== 'string') throw error(400, 'Invalid base revision');
+		if (previous === null && doc.word_count > 0) throw error(503, { code: 'CONTENT_UNAVAILABLE', message: 'The server copy is unavailable. Your local writing must be kept until storage is recovered.' });
+		if (body.base_revision !== revision(previous ?? '')) {
+			// A retry after a lost response is harmless when the exact content arrived.
+			if (previous === html) return json({ ...doc, content_revision: revision(html) });
+			throw error(409, 'This chapter changed on another device. Your local version is preserved; compare both versions before replacing anything.');
+		}
+	}
 
 	// Blank strings must NOT blank an existing title/synopsis — only apply
 	// when a real (trimmed, non-empty) value was sent, otherwise pass null
@@ -83,5 +98,5 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	updateDoc();
 
 	const updated = locals.db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(params.id);
-	return json(updated);
+	return json({ ...(updated as object), content_revision: revision(html) });
 };

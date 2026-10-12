@@ -18,6 +18,8 @@ export const handleError: HandleServerError = ({ error, status }) => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// The empty offline shell contains no server data and works even if storage fails.
+	if (event.url.pathname === '/offline' || event.url.pathname === '/offline/__data.json') return resolve(event);
 	event.locals.db = getDb();
 	event.locals.user = null;
 

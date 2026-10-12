@@ -22,7 +22,12 @@
 		onManualSnapshot,
 		registerFlush,
 		contentVersion = 0,
-		onrename
+		onrename,
+		ondraft,
+		savedLabel = 'Saved',
+		chapterNumber,
+		onprevious,
+		onnext
 	}: {
 		docId: string;
 		initialContent: string;
@@ -35,6 +40,11 @@
 		registerFlush?: (flush: () => Promise<boolean>) => void;
 		contentVersion?: number;
 		onrename?: (title: string) => void;
+		ondraft?: (content: string, docId: string) => void;
+		savedLabel?: string;
+		chapterNumber?: number;
+		onprevious?: () => void;
+		onnext?: () => void;
 	} = $props();
 
 	// Doc-title rename state (pencil button next to the header title)
@@ -312,6 +322,7 @@
 
 	function scheduleSave() {
 		saves.markDirty();
+		ondraft?.(editor?.getHTML() || '', currentDocId);
 		clearTimeout(saveTimeout);
 		saveTimeout = setTimeout(triggerSave, 2000);
 	}
@@ -402,15 +413,8 @@
 		clearTimeout(saveTimeout);
 		clearTimeout(copyTimeout);
 		clearTimeout(titleCopyTimeout);
-		if (editor && saveStatus !== 'saved' && currentDocId) {
-			// Use keepalive to ensure the save completes even during page unload
-			fetch(`/api/documents/${currentDocId}`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content: editor.getHTML() }),
-				keepalive: true
-			}).catch(() => { /* Best effort only; navigation guards retain unsaved work. */ });
-		}
+		// Never issue an unconditional unload PUT: it could overwrite a newer device.
+		if (editor && saveStatus !== 'saved') ondraft?.(editor.getHTML(), currentDocId);
 		editor?.destroy();
 	});
 
@@ -652,6 +656,7 @@
 			{:else}
 				<!-- title attribute so a long name truncated by the ellipsis is still
 				     readable on hover -->
+				{#if chapterNumber}<span class="chapter-number">Chapter {chapterNumber}</span>{/if}
 				<h1 class="doc-title" title={title}>{title}</h1>
 				{#if onrename}
 					<button class="rename-btn" onclick={startTitleRename} title="Rename document" aria-label="Rename document">✎</button>
@@ -670,6 +675,10 @@
 				<button class="tb-btn" class:active={mode === 'read'} aria-pressed={mode === 'read'} onclick={() => setMode('read')} title="Read mode — select and copy without the keyboard">Read</button>
 				<button class="tb-btn" class:active={mode === 'edit'} aria-pressed={mode === 'edit'} onclick={() => setMode('edit')} title="Edit mode — write and format">Edit</button>
 			</div>
+			{#if mode === 'read' && (onprevious || onnext)}
+				<button class="tb-btn chapter-nav" disabled={!onprevious} onclick={onprevious} aria-label="Previous chapter">← Previous</button>
+				<button class="tb-btn chapter-nav" disabled={!onnext} onclick={onnext} aria-label="Next chapter">Next →</button>
+			{/if}
 			<span class="tb-sep"></span>
 			{#if mode === 'edit'}
 				<button class="tb-btn" class:active={editor?.isActive('bold')} onclick={toggleBold} title="Bold (Ctrl+B)"><strong>B</strong></button>
@@ -745,13 +754,15 @@
 				<span class="spellcheck-indicator">{spellcheck ? 'Spellcheck on' : 'Spellcheck off'}</span>
 			{/if}
 			<span class="save-status" class:saved={saveStatus === 'saved'} class:saving={saveStatus === 'saving'} class:unsaved={saveStatus === 'unsaved'}>
-				{#if saveStatus === 'saved'}Saved{:else if saveStatus === 'saving'}Saving...{:else}Unsaved changes{/if}
+				{#if saveStatus === 'saved'}{savedLabel}{:else if saveStatus === 'saving'}Saving...{:else}Unsaved changes{/if}
 			</span>
 		</span>
 	</div>
 </div>
 
 <style>
+	.chapter-number { color: var(--text-secondary); font-size: .85rem; white-space: nowrap; }
+	.chapter-nav { min-height: 44px; }
 	.save-recovery { padding: .5rem 1rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; background: var(--warning-bg); color: var(--warning-text); font-size: .85rem; }
 	.save-recovery button { font: inherit; padding: .3rem .5rem; cursor: pointer; }
 

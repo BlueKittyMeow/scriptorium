@@ -3,6 +3,7 @@ import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ locals, url }) => {
 	const pathname = url.pathname;
+	if (pathname === '/offline') return { user: null };
 
 	// Public routes that don't require auth
 	const isPublicRoute = pathname === '/login' || pathname === '/setup';

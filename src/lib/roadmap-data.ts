@@ -20,6 +20,9 @@ export interface RoadmapItem {
 export const ROADMAP_STATUSES = ['shipped', 'next', 'planned', 'someday'] as const;
 
 export const ROADMAP: RoadmapItem[] = [
+	{ key: 'pdf-export-repair', title: 'PDF export restored', note: 'Chapter page breaks and numbering, with a mobile-friendly download.', status: 'shipped', shipped: '2026-10' },
+	{ key: 'offline-device-copies', title: 'Read and write downloaded works offline', note: 'Save a work on your device, reopen without the server, and sync on reconnection. Conflicting versions stay separate for you to compare.', status: 'shipped', shipped: '2026-10' },
+	{ key: 'chapter-navigation-numbering', title: 'Chapter navigation and automatic numbering', note: 'Previous/next chapter, folder-by-folder numbering, and exclusions for epigraphs or whole folders. Move chapters with drag or the phone-friendly menu.', status: 'shipped', shipped: '2026-10' },
 	{
 		key: 'session-and-error-recovery',
 		title: 'Clear errors and safer save recovery',

@@ -29,6 +29,12 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const existing = locals.db.prepare('SELECT * FROM novels WHERE id = ? AND deleted_at IS NULL').get(params.id);
 	if (!existing) throw error(404, 'Novel not found');
 
+	if (body.numbering_enabled !== undefined) {
+		if (typeof body.numbering_enabled !== 'boolean') throw error(400, 'numbering_enabled must be a boolean');
+		locals.db.prepare('UPDATE novels SET numbering_enabled = ?, updated_at = ? WHERE id = ?')
+			.run(body.numbering_enabled ? 1 : 0, now, params.id);
+	}
+
 	// Ownership reassignment is archivist-only (§C.1 first slice). Writers
 	// that send owner_id are silently ignored — owner_id stays NULL below so
 	// COALESCE keeps the existing owner. NOTE: no permission enforcement rides

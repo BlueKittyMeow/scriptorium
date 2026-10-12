@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setLocalAccount, lockLocalAccount } from '$lib/offline.js';
 	import { apiFetch } from '$lib/api.js';
 	import RequestNotice from '$lib/components/RequestNotice.svelte';
 	import { onMount } from 'svelte';
@@ -12,11 +13,12 @@
 	// The workspace page fills 100dvh; a normal-flow top bar above it would
 	// push the editor footer off-screen on mobile, so the bar hides there
 	// (mobile only — CSS scoped). Sign-out/admin remain reachable from the library.
-	const isWorkspace = $derived(/^\/novels\/(?!compare$)[^/]+$/.test($page.url.pathname));
+	const isWorkspace = $derived($page.url.pathname === '/offline' || /^\/novels\/(?!compare$)[^/]+$/.test($page.url.pathname));
 
 	async function logout() {
 		const response = await apiFetch('/api/auth/logout', { method: 'POST' });
 		if (!response.ok) return;
+		await lockLocalAccount().catch(() => {});
 		window.location.href = '/login';
 	}
 
@@ -39,6 +41,7 @@
 	);
 
 	onMount(() => {
+		if (data.user) void setLocalAccount({ id: data.user.id, username: data.user.username }).catch(() => {});
 		theme = localStorage.getItem('scriptorium-theme') || 'system';
 		mounted = true;
 
